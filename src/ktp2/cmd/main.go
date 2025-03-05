@@ -59,6 +59,8 @@ type Flags struct {
 	ktProps          bool
 	queryFees        string
 	withdrawFees     string
+	currentBlock     bool
+	waitDuration     time.Duration
 }
 
 func main() {
@@ -77,8 +79,8 @@ func main() {
 }
 
 // loadMasterProperties extracts and verifies master properties from environment variables
-func loadMasterProperties() ktfunc.Addresses {
-	mProps := ktfunc.Addresses{
+func loadMasterProperties() ktfunc.MasterProps {
+	mProps := ktfunc.MasterProps{
 		MyPublicKey:  os.Getenv("MY_PUBLIC_KEY"),
 		MyPrivateKey: os.Getenv("MY_PRIVATE_KEY"),
 		DeadAddr:     os.Getenv("DEAD_ADDR"),
@@ -90,6 +92,7 @@ func loadMasterProperties() ktfunc.Addresses {
 		KtAddr:       os.Getenv("KT_ADDR"),
 		KtStartBlock: os.Getenv("KT_START_BLOCK"),
 		EthEndpoint:  os.Getenv("ETH_ENDPOINT"),
+		WaitDuration: os.Getenv("WAIT_DURATION"),
 	}
 
 	// Verify required properties
@@ -110,8 +113,8 @@ func displayStartupBanner() {
 	fmt.Print("\n")
 	fmt.Print("──────────────────────────────────────────────────────────────────────────────────────────\n")
 	fmt.Print("\n")
-	figure.NewColorFigure("KT OC", "larry3d", "red", true).Print()
-	figure.NewColorFigure("v0.1-beta", "larry3d", "red", true).Print()
+	figure.NewColorFigure("KTOC", "larry3d", "red", true).Print()
+	figure.NewColorFigure("v0.2-beta", "larry3d", "red", true).Print()
 	fmt.Print("\n")
 	figure.NewColorFigure("shinatoken", "binary", "red", true).Print()
 	fmt.Print("\n")
@@ -152,6 +155,8 @@ func parseFlags() Flags {
 	verbose := flag.Bool("verbose", false, "Display verbose output during operations.")
 	queryFees := flag.String("queryFees", "", "Query the current gas fees for a specified block range with syntax <startBlock>:<endBlock>")
 	withdrawFees := flag.String("withdrawFees", "", "Withdraw owed fees from kt. syntax: <block1>,<block2>,<blockn>,etc...")
+	currentBlock := flag.Bool("currentBlock", false, "Print the current Ethereum block number. Useful for fetching fees owed.")
+	waitDuration := flag.Duration("waitDuration", ktfunc.TimeToWaitForBlocks, "Set the duration to wait between operations (ex: 1s, 2m). Default is 1 minute.")
 
 	// Testing Commands (for development and testing)
 	continuous := flag.Bool("continuous", false, "TESTING: Run continuous operations in a loop, simulating various actions (e.g., staking, giving ETH). For development use only.")
@@ -184,6 +189,8 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -verbose            %s\n", "Display verbose output during operations.")
 		fmt.Fprintf(os.Stderr, "  -queryFees <n>:<n>  %s\n", "Query the reward amount owed this node. <startBlock>:<endBlock>.")
 		fmt.Fprintf(os.Stderr, "  -withdrawFees <blocks> %s\n", "Withdraw owed fees from kt. <blocks> is a comma-separated list of block numbers.")
+		fmt.Fprintf(os.Stderr, "  -currentBlock       %s\n", "Print the current Ethereum block number. Useful for fetching fees owed.")
+		fmt.Fprintf(os.Stderr, "  -waitDuration <duration> %s\n", "Set the duration to wait between operations (e.g., 1s, 2m).")
 
 		fmt.Fprintf(os.Stderr, "\n🛠️ Testing Commands (Local Dev Use Only):\n")
 		fmt.Fprintf(os.Stderr, "  -continuous         %s\n", "Run continuous operations in a loop for testing.")
@@ -202,6 +209,7 @@ func parseFlags() Flags {
 	flag.Parse()
 
 	return Flags{
+		help:             *help,
 		continuous:       *continuous,
 		giveAmount:       *giveAmount,
 		stakeAmount:      *stakeAmount,
@@ -214,13 +222,14 @@ func parseFlags() Flags {
 		findKts:          *findKts,
 		createKt:         *createKt,
 		gasLimit:         *gasLimit,
-		blocksToWait:     *blocksToWait,
 		ktBlock:          *ktBlock,
-		help:             *help,
 		ktProps:          *ktProps,
 		verbose:          *verbose,
 		queryFees:        *queryFees,
 		withdrawFees:     *withdrawFees,
+		currentBlock:     *currentBlock,
+		blocksToWait:     *blocksToWait,
+		waitDuration:     *waitDuration,
 	}
 }
 
@@ -232,6 +241,14 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 
 	if flags.verbose {
 		log.SetLevel(log.DebugLevel)
+	}
+
+	if flags.currentBlock {
+		currentBlock, err := ktfunc.GetCurrentBlock(cProps)
+		if err != nil {
+			log.Warnf("Error getting current block: %v", err)
+		}
+		log.Infof("Current Ethereum block number: %d", currentBlock.NumberU64())
 	}
 
 	if flags.initTestWallets {
@@ -364,14 +381,14 @@ func printDeterministicKeys() {
 
 // continuousOperations runs continuous operations for testing.
 func testContinuousOperations(cProps *ktfunc.ConnectionProps) {
-	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
 	keyPairs := tests.DeterministicPrivateKeys(10)
 
 	for {
+		rand := rand.New(rand.NewSource(time.Now().UnixNano()))
 		LogOperationStart("Continuous operation iteration")
 		moveBlockForward := rand.Int63n(81) + 2
 		stakeAmount := rand.Int63n(9001) + 1000
-		giveAmount := rand.Float64()*0.1 + 0.001
+		giveAmount := rand.Float64()*0.1 + 0.04
 
 		log.Infof("Moving blocks: %d", moveBlockForward)
 		log.Infof("Staking: %d tokens", stakeAmount)
@@ -404,13 +421,13 @@ func testContinuousOperations(cProps *ktfunc.ConnectionProps) {
 			}
 		}
 
-		log.Info("Iteration complete: Sleeping for 5 seconds")
-		time.Sleep(5 * time.Second)
+		log.Printf("Iteration complete: Sleeping for %d seconds", int(cProps.WaitDuration.Seconds()))
+		time.Sleep(time.Duration(cProps.WaitDuration))
 	}
 }
 
 // setupConnectionProps initializes Ethereum connection properties.
-func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.ConnectionProps {
+func setupConnectionProps(mstProps *ktfunc.MasterProps, flags Flags) *ktfunc.ConnectionProps {
 	fmt.Println("")
 	log.Println("Setting up connection properties...")
 	cProps := &ktfunc.ConnectionProps{}
@@ -418,6 +435,24 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 	// Use the defined gas limit.
 	cProps.GasLimit = flags.gasLimit
 	cProps.BlocksToWait = flags.blocksToWait
+
+	duration := ktfunc.TimeToWaitForBlocks
+	if mstProps.WaitDuration != "" {
+		if parsed, err := time.ParseDuration(mstProps.WaitDuration); err != nil {
+			log.Warnf("Invalid wait duration '%s': %v. Using default: %v",
+				mstProps.WaitDuration, err, ktfunc.TimeToWaitForBlocks)
+		} else {
+			duration = parsed
+		}
+	}
+
+	// Override with flags if different from default
+	if flags.waitDuration != ktfunc.TimeToWaitForBlocks {
+		log.Infof("Overriding wait duration with command line flag: %v", flags.waitDuration)
+		duration = flags.waitDuration
+	}
+
+	cProps.WaitDuration = duration
 
 	// Connect to Ethereum node.
 	client, err := ethclient.Dial(mstProps.EthEndpoint)
@@ -503,6 +538,7 @@ func KeepRunning(cProps *ktfunc.ConnectionProps) {
 			log.Printf("Error in VoteAndReward: %v", err)
 		}
 
-		time.Sleep(ktfunc.TimeToWaitForBlocks)
+		log.Printf("Iteration complete. Sleeping for %d seconds", int(cProps.WaitDuration.Seconds()))
+		time.Sleep(time.Duration(cProps.WaitDuration))
 	}
 }

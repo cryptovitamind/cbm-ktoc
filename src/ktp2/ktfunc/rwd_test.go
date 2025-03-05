@@ -110,13 +110,13 @@ func TestParseWithdrawBlocks(t *testing.T) {
 			name:        "below range",
 			input:       "0",
 			expectError: true,
-			errorMsg:    "block number 0 at position 1 is out of range (1-5000000)",
+			errorMsg:    "block number 0 at position 1 is out of range (1-500000000)",
 		},
 		{
 			name:        "above range",
-			input:       "5000001",
+			input:       "500000001",
 			expectError: true,
-			errorMsg:    "block number 5000001 at position 1 is out of range (1-5000000)",
+			errorMsg:    "block number 500000001 at position 1 is out of range (1-500000000)",
 		},
 		{
 			name:        "empty part",

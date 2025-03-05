@@ -15,7 +15,7 @@ import (
 const (
 	DefaultGasLimit     uint64        = 24000
 	DefaultBlocksToWait uint64        = 10
-	TimeToWaitForBlocks time.Duration = 5 * time.Second
+	TimeToWaitForBlocks time.Duration = 1 * time.Minute
 )
 
 type EthClient interface {
@@ -50,16 +50,17 @@ type ConnectionProps struct {
 	Backend      bind.ContractBackend // Contract backend for KT contract
 	MyPubKey     common.Address       // User's public address
 	MyPrivateKey *ecdsa.PrivateKey    // User's private key (for testing only)
-	Addresses    *Addresses           // Contract and wallet addresses
+	Addresses    *MasterProps         // Contract and wallet addresses
 	KtAddr       common.Address       // KT contract address
 	KtBlock      *big.Int             // Start block number for KT contract
 	Kt           *abis.Ktv2           // KT contract instance
 	GasLimit     uint64               // Gas limit for transactions
 	BlocksToWait uint64               // Number of blocks to wait for transactions to confirm
+	WaitDuration time.Duration        // Duration to wait between checks (seconds)
 }
 
-// Addresses holds Ethereum addresses and private keys from environment variables.
-type Addresses struct {
+// MasterProps holds Ethereum addresses and private keys from environment variables.
+type MasterProps struct {
 	MyPublicKey  string // User's public key (hex string)
 	MyPrivateKey string // User's private key (hex string, for testing only)
 	DeadAddr     string // Dead address for burning tokens
@@ -71,6 +72,7 @@ type Addresses struct {
 	KtAddr       string // KT contract address
 	EthEndpoint  string // Ethereum client endpoint
 	KtStartBlock string // Start block number for KT contract
+	WaitDuration string // Duration to wait between checks (seconds)
 }
 
 // UserStakeData holds staking-related data for a user.

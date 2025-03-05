@@ -29,7 +29,7 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	log.Debugf("Voting and rewarding")
 
 	// Get current block
-	currentBlock, err := getCurrentBlock(cProps)
+	currentBlock, err := GetCurrentBlock(cProps)
 	if err != nil {
 		log.Errorf("Failed to get current block: %v", err)
 		return fmt.Errorf("failed to get current block: %w", err)
@@ -71,7 +71,6 @@ func VoteAndReward(cProps *ConnectionProps) error {
 
 	if totalMin.Cmp(big.NewInt(0)) == 0 {
 		log.Warn("No stakes found.")
-		return nil
 	}
 
 	// Print minimum stakes
@@ -79,12 +78,11 @@ func VoteAndReward(cProps *ConnectionProps) error {
 
 	// Calculate probabilities for each wallet
 	if !calculateProbsForEachWallet(stakeDataMinsMap, totalMin) {
-		log.Warn("No valid probabilities calculated")
-		return nil
+		log.Warn("No valid probabilities calculated. Forcing vote...")
 	}
 
 	// Vote and potentially reward the winner
-	winner, err := calculateVoteAndReward(stakeDataMinsMap, startBlock, endBlock, cProps)
+	winner, err := calculateVoteAndReward(cProps, stakeDataMinsMap, startBlock, endBlock)
 	if err != nil {
 		log.Errorf("Failed to vote and reward: %v", err)
 		return fmt.Errorf("failed to vote and reward: %w", err)
@@ -98,7 +96,7 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	return nil
 }
 
-func calculateVoteAndReward(stakeDataMinsMap map[common.Address]*UserStakeData, epochStartBlock, endEpochBlockNumber *big.Int, cProps *ConnectionProps) (common.Address, error) {
+func calculateVoteAndReward(cProps *ConnectionProps, stakeDataMinsMap map[common.Address]*UserStakeData, epochStartBlock, endEpochBlockNumber *big.Int) (common.Address, error) {
 	log.Debugf("Calculating vote and reward")
 
 	// Validate inputs
@@ -115,6 +113,7 @@ func calculateVoteAndReward(stakeDataMinsMap map[common.Address]*UserStakeData, 
 		return common.Address{}, fmt.Errorf("epoch start or end block is nil")
 	}
 
+	// If there are no valid stakes, just vote without calculating a winning wallet.
 	const oneExtraBlock = 1
 	nextBlockNumber := new(big.Int).Add(endEpochBlockNumber, big.NewInt(oneExtraBlock))
 	log.Printf("Epoch start block: %d, Next block: %d", epochStartBlock.Uint64(), nextBlockNumber.Uint64())
@@ -134,8 +133,8 @@ func calculateVoteAndReward(stakeDataMinsMap map[common.Address]*UserStakeData, 
 		return common.Address{}, fmt.Errorf("failed to calculate winning wallet: %w", err)
 	}
 	if winner == (common.Address{}) {
-		log.Warn("No winner determined")
-		return winner, nil
+		log.Warn("No winner determined. Switching to dead address.")
+		winner = ToAddr(cProps.Addresses.DeadAddr)
 	}
 	log.Infof("Winner selected: %s", winner.Hex())
 
@@ -163,6 +162,48 @@ func calculateVoteAndReward(stakeDataMinsMap map[common.Address]*UserStakeData, 
 	}
 
 	return winner, nil
+}
+
+// PredictRecordOCFee predicts the uint return value of recordOCFee
+func calcOCFees(cProps *ConnectionProps) (*big.Int, error) {
+	callOpts := &bind.CallOpts{
+		Context: context.Background(),
+		Pending: false,
+		From:    cProps.MyPubKey,
+	}
+
+	// Contract's current balance
+	balance, err := cProps.Client.BalanceAt(context.Background(), cProps.KtAddr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get contract balance: %v", err)
+	}
+
+	// Fetch tlOcFees
+	tlOcFees, err := cProps.Kt.TlOcFees(callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching TlOcFees: %v", err)
+	}
+
+	// Fetch ocFee and convert to *big.Int
+	ocFeeUint16, err := cProps.Kt.OcFee(callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching OcFee: %v", err)
+	}
+	ocFee := new(big.Int).SetUint64(uint64(ocFeeUint16))
+
+	// Hardcode P_DEN
+	pDen := big.NewInt(1000) // P_DEN = 100 * P_FCTR = 100 * 10 = 1000
+
+	// Perform the calculation
+	newTlOcFees := new(big.Int).Set(tlOcFees)
+	if balance.Cmp(tlOcFees) > 0 {
+		diff := new(big.Int).Sub(balance, tlOcFees)
+		temp := new(big.Int).Mul(diff, ocFee)
+		amt := new(big.Int).Div(temp, pDen)
+		newTlOcFees.Add(tlOcFees, amt)
+	}
+
+	return newTlOcFees, nil
 }
 
 // printEndEpochKtEthBalance logs the KT contract's ETH balance at the specified end epoch block.
@@ -221,9 +262,9 @@ func getStartAndEndEpochBlocks(cProps *ConnectionProps) (*big.Int, *big.Int, err
 	return startBlock, endBlock, nil
 }
 
-// getCurrentBlock retrieves the latest block from the blockchain.
+// GetCurrentBlock retrieves the latest block from the blockchain.
 // Returns the block or nil if an error occurs.
-func getCurrentBlock(cProps *ConnectionProps) (*types.Block, error) {
+func GetCurrentBlock(cProps *ConnectionProps) (*types.Block, error) {
 	log.Debug("Fetching current block")
 
 	// Fetch the latest block (nil block number means latest)
@@ -251,7 +292,7 @@ func defaultCalculateWinningWallet(stakeDataMinsMap map[common.Address]*UserStak
 		return common.Address{}, fmt.Errorf("stake data map is nil")
 	}
 	if len(stakeDataMinsMap) == 0 {
-		log.Info("No stakes found in the map")
+		log.Info("No stakes found in the map.")
 		return common.Address{}, nil
 	}
 
@@ -373,6 +414,22 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address) error {
 		return fmt.Errorf("failed to create transactor: %v", err)
 	}
 
+	// If winner is dead wallet, don't send anything
+	rewardAmount, err := calcOCFees(cProps)
+	if err != nil {
+		return fmt.Errorf("failed to predict OCFee: %v", err)
+	}
+
+	if winner == ToAddr(cProps.Addresses.DeadAddr) {
+		log.Warnf("Winner is a dead wallet - Sending no reward.")
+	} else {
+		// Get the contract balance (this will be the reward amount)
+		rewardAmount, err = cProps.Client.BalanceAt(context.Background(), cProps.KtAddr, nil)
+		if err != nil {
+			return fmt.Errorf("failed to get contract balance: %v", err)
+		}
+	}
+
 	// Get the winner's balance before the reward
 	balanceBefore, err := cProps.Client.BalanceAt(context.Background(), winner, nil)
 	if err != nil {
@@ -382,12 +439,6 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address) error {
 	// Convert balance before from wei to ETH
 	weiToEthBefore := new(big.Float).SetInt(balanceBefore)
 	balanceBeforeEth := new(big.Float).Quo(weiToEthBefore, big.NewFloat(1e18))
-
-	// Get the contract balance (this will be the reward amount)
-	rewardAmount, err := cProps.Client.BalanceAt(context.Background(), cProps.KtAddr, nil)
-	if err != nil {
-		return fmt.Errorf("failed to get contract balance: %v", err)
-	}
 
 	// Convert reward amount from wei to ETH
 	weiToEthReward := new(big.Float).SetInt(rewardAmount)
@@ -445,7 +496,7 @@ func WaitForBlocks(cProps *ConnectionProps) error {
 
 	log.Printf("Waiting for %d blocks to pass...", cProps.BlocksToWait)
 	for currentBlock < targetBlock {
-		time.Sleep(TimeToWaitForBlocks)
+		time.Sleep(time.Duration(10 * time.Second))
 		currentBlock, err = cProps.Client.BlockNumber(context.Background())
 		if err != nil {
 			return fmt.Errorf("failed to get current block number: %v", err)

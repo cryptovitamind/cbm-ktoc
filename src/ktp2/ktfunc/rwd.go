@@ -184,7 +184,7 @@ func parseWithdrawBlocks(blocks string) ([]uint32, error) {
 		}
 
 		if val < 1 || val > 500000000 {
-			return nil, fmt.Errorf("block number %d at position %d is out of range (1-5000000)", val, i+1)
+			return nil, fmt.Errorf("block number %d at position %d is out of range (1-500000000)", val, i+1)
 		}
 
 		log.Printf("Parsed block %d: %d", i+1, val)
