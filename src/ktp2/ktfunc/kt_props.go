@@ -329,6 +329,26 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 		log.Printf("Error fetching TlOcFees: %v", err)
 		return
 	}
+	tokenAddr, err := cProps.Kt.TokenAddr(callOpts)
+	if err != nil {
+		log.Printf("Error fetching TokenAddr: %v", err)
+		return
+	}
+	dest, err := cProps.Kt.Dest(callOpts)
+	if err != nil {
+		log.Printf("Error fetching Dest: %v", err)
+		return
+	}
+	burnDest, err := cProps.Kt.BurnDest(callOpts)
+	if err != nil {
+		log.Printf("Error fetching BurnDest: %v", err)
+		return
+	}
+	pool, err := cProps.Kt.Pool(callOpts)
+	if err != nil {
+		log.Printf("Error fetching Pool: %v", err)
+		return
+	}
 
 	log.Printf("KT Contract Variables:")
 
@@ -346,6 +366,12 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 	log.Printf("Consensus Requirement: %d", consensusReq)
 	log.Printf("OC Fee: %d", ocFee)
 	log.Printf("Total OC Fees: %s", tlOcFees.String())
+
+	log.Print("Addresses:")
+	log.Printf(" Token Address: %s", tokenAddr.Hex())
+	log.Printf(" Destination: %s", dest.Hex())
+	log.Printf(" Burn Destination: %s", burnDest.Hex())
+	log.Printf(" Pool: %s", pool.Hex())
 
 	// Convert Wei to ETH
 	PrintKtBalance(cProps)
