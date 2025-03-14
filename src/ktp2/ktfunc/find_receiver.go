@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -448,7 +449,12 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address) error {
 	// Call the rwd function to send the reward
 	tx, err := cProps.Kt.Rwd(auth, winner, rewardAmount)
 	if err != nil {
-		return fmt.Errorf("failed to call rwd function: %v", err)
+		if strings.Contains(err.Error(), "Epoch incomplete") {
+			log.Warnf("Epoch incomplete - Not rewarding. Most likely another node got to it first. %v", err)
+			return nil
+		} else {
+			return fmt.Errorf("failed to call rwd function: %v", err)
+		}
 	}
 
 	log.Printf("Reward transaction sent: %s", tx.Hash().Hex())
