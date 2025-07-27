@@ -1,7 +1,10 @@
 package ktfunc
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/gob"
 	"fmt"
 	"ktp2/src/abis"
 	"math/big"
@@ -13,7 +16,28 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	log "github.com/sirupsen/logrus"
+	"go.etcd.io/bbolt"
 )
+
+// StakeEvent represents a stake event
+type StakeEvent struct {
+	Addr   common.Address
+	Amount *big.Int
+	Block  uint64
+}
+
+// WithdrawEvent represents a withdraw event
+type WithdrawEvent struct {
+	Addr   common.Address
+	Amount *big.Int
+	Block  uint64
+}
+
+// ChunkEvents holds events for a block chunk
+type ChunkEvents struct {
+	StakeEvents    []StakeEvent
+	WithdrawEvents []WithdrawEvent
+}
 
 // Define as a variable holding a function
 var calcWinningWallet = defaultCalculateWinningWallet
@@ -564,85 +588,155 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 		return nil, fmt.Errorf("start block %d exceeds end block %d", startBlock.Uint64(), endBlock.Uint64())
 	}
 
-	// Initialize stake data map
+	// Open DB
+	db, err := bbolt.Open("events.db", 0600, nil)
+	if err != nil {
+		log.Errorf("Failed to open database: %v", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+	defer db.Close()
+
+	// Create bucket
+	err = db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte("chunks"))
+		return err
+	})
+	if err != nil {
+		log.Errorf("Failed to create bucket: %v", err)
+		return nil, fmt.Errorf("failed to create bucket: %w", err)
+	}
+
+	chunkSize := uint64(500)
+	startU := startBlock.Uint64()
+	endU := endBlock.Uint64()
+
+	var stakeEvents []StakeEvent
+	var withdrawEvents []WithdrawEvent
+
+	for currentStart := startU; currentStart <= endU; currentStart += chunkSize {
+		currentEnd := currentStart + chunkSize - 1
+		if currentEnd > endU {
+			currentEnd = endU
+		}
+
+		key := make([]byte, 8)
+		binary.BigEndian.PutUint64(key, currentStart)
+
+		var chunk ChunkEvents
+		err = db.View(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte("chunks"))
+			v := b.Get(key)
+			if v == nil {
+				return nil
+			}
+			return gob.NewDecoder(bytes.NewReader(v)).Decode(&chunk)
+		})
+		if err == nil && (chunk.StakeEvents != nil || chunk.WithdrawEvents != nil) {
+			stakeEvents = append(stakeEvents, chunk.StakeEvents...)
+			withdrawEvents = append(withdrawEvents, chunk.WithdrawEvents...)
+			log.Debugf("Loaded cached chunk %d-%d", currentStart, currentEnd)
+			continue
+		}
+
+		// Query
+		endPtr := currentEnd
+		opts := &bind.FilterOpts{
+			Start:   currentStart,
+			End:     &endPtr,
+			Context: context.Background(),
+		}
+
+		stakeIter, err := kt.FilterStaked(opts)
+		if err != nil {
+			log.Errorf("Failed to filter stake events for %d-%d: %v", currentStart, currentEnd, err)
+			return nil, fmt.Errorf("failed to filter stake events: %w", err)
+		}
+
+		var chunkStake []StakeEvent
+		for stakeIter.Next() {
+			e := stakeIter.Event
+			if e == nil {
+				continue
+			}
+			chunkStake = append(chunkStake, StakeEvent{
+				Addr:   e.Arg0,
+				Amount: e.Arg1,
+				Block:  e.Raw.BlockNumber,
+			})
+			log.Debugf("Stake event - Address: %s, Amount: %s, Block: %d", e.Arg0.Hex(), e.Arg1.String(), e.Raw.BlockNumber)
+		}
+		if err := stakeIter.Error(); err != nil {
+			log.Errorf("Stake iterator error: %v", err)
+		}
+
+		withdrawIter, err := kt.FilterWithdrew(opts)
+		if err != nil {
+			log.Errorf("Failed to filter withdrawal events for %d-%d: %v", currentStart, currentEnd, err)
+			return nil, fmt.Errorf("failed to filter withdrawal events: %w", err)
+		}
+
+		var chunkWithdraw []WithdrawEvent
+		for withdrawIter.Next() {
+			e := withdrawIter.Event
+			if e == nil {
+				continue
+			}
+			chunkWithdraw = append(chunkWithdraw, WithdrawEvent{
+				Addr:   e.Arg0,
+				Amount: e.Arg1,
+				Block:  e.Raw.BlockNumber,
+			})
+			log.Debugf("Withdrawal event - Address: %s, Amount: %s, Block: %d", e.Arg0.Hex(), e.Arg1.String(), e.Raw.BlockNumber)
+		}
+		if err := withdrawIter.Error(); err != nil {
+			log.Errorf("Withdraw iterator error: %v", err)
+		}
+
+		// Store
+		err = db.Update(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte("chunks"))
+			var buf bytes.Buffer
+			if err := gob.NewEncoder(&buf).Encode(ChunkEvents{
+				StakeEvents:    chunkStake,
+				WithdrawEvents: chunkWithdraw,
+			}); err != nil {
+				return err
+			}
+			return b.Put(key, buf.Bytes())
+		})
+		if err != nil {
+			log.Warnf("Failed to store chunk %d-%d: %v", currentStart, currentEnd, err)
+		} else {
+			log.Debugf("Stored chunk %d-%d", currentStart, currentEnd)
+		}
+
+		stakeEvents = append(stakeEvents, chunkStake...)
+		withdrawEvents = append(withdrawEvents, chunkWithdraw...)
+	}
+
+	// Build stakeDataMap
 	stakeDataMap := make(map[common.Address]map[uint64]*UserStakeData)
-	log.Infof("Collecting events from block %d to %d", startBlock.Uint64(), endBlock.Uint64())
 
-	// Set up filter options from block 0 to endBlock
-	startBlockUint64 := startBlock.Uint64()
-	endBlockUint64 := endBlock.Uint64()
-	opts := &bind.FilterOpts{
-		Start:   startBlockUint64,
-		End:     &endBlockUint64,
-		Context: context.Background(),
-	}
-
-	// Filter stake events
-	stakeIter, err := kt.FilterStaked(opts)
-	if err != nil {
-		log.Errorf("Failed to filter stake events: %v", err)
-		return nil, fmt.Errorf("failed to filter stake events: %w", err)
-	}
-	defer stakeIter.Close()
-
-	for stakeIter.Next() {
-		event := stakeIter.Event
-		if event == nil {
-			log.Warn("Encountered nil stake event")
-			continue
-		}
-
-		addr := event.Arg0
-		amount := event.Arg1
-		blockNum := event.Raw.BlockNumber
-
+	for _, e := range stakeEvents {
+		addr := e.Addr
 		if _, exists := stakeDataMap[addr]; !exists {
 			stakeDataMap[addr] = make(map[uint64]*UserStakeData)
 		}
-		if stakeDataMap[addr][blockNum] == nil {
-			stakeDataMap[addr][blockNum] = &UserStakeData{StakeAmount: big.NewInt(0)}
+		if stakeDataMap[addr][e.Block] == nil {
+			stakeDataMap[addr][e.Block] = &UserStakeData{StakeAmount: big.NewInt(0)}
 		}
-		stakeDataMap[addr][blockNum].StakeAmount.Add(stakeDataMap[addr][blockNum].StakeAmount, amount)
-		log.Debugf("Stake event - Address: %s, Amount: %s, Block: %d", addr.Hex(), amount.String(), blockNum)
+		stakeDataMap[addr][e.Block].StakeAmount.Add(stakeDataMap[addr][e.Block].StakeAmount, e.Amount)
 	}
 
-	if err := stakeIter.Error(); err != nil {
-		log.Errorf("Stake iterator error: %v", err)
-		return nil, fmt.Errorf("stake iterator encountered an error: %w", err)
-	}
-
-	// Filter withdrawal events
-	withdrawIter, err := kt.FilterWithdrew(opts)
-	if err != nil {
-		log.Errorf("Failed to filter withdrawal events: %v", err)
-		return nil, fmt.Errorf("failed to filter withdrawal events: %w", err)
-	}
-	defer withdrawIter.Close()
-
-	for withdrawIter.Next() {
-		event := withdrawIter.Event
-		if event == nil {
-			log.Warn("Encountered nil withdrawal event")
-			continue
-		}
-
-		addr := event.Arg0
-		amount := event.Arg1
-		blockNum := event.Raw.BlockNumber
-
+	for _, e := range withdrawEvents {
+		addr := e.Addr
 		if _, exists := stakeDataMap[addr]; !exists {
 			stakeDataMap[addr] = make(map[uint64]*UserStakeData)
 		}
-		if stakeDataMap[addr][blockNum] == nil {
-			stakeDataMap[addr][blockNum] = &UserStakeData{StakeAmount: big.NewInt(0)}
+		if stakeDataMap[addr][e.Block] == nil {
+			stakeDataMap[addr][e.Block] = &UserStakeData{StakeAmount: big.NewInt(0)}
 		}
-		stakeDataMap[addr][blockNum].StakeAmount.Sub(stakeDataMap[addr][blockNum].StakeAmount, amount)
-		log.Infof("Withdrawal event - Address: %s, Amount: %s, Block: %d", addr.Hex(), amount.String(), blockNum)
-	}
-
-	if err := withdrawIter.Error(); err != nil {
-		log.Errorf("Withdrawal iterator error: %v", err)
-		return nil, fmt.Errorf("withdrawal iterator encountered an error: %w", err)
+		stakeDataMap[addr][e.Block].StakeAmount.Sub(stakeDataMap[addr][e.Block].StakeAmount, e.Amount)
 	}
 
 	log.Infof("Total addresses with events: %d", len(stakeDataMap))
@@ -676,8 +770,7 @@ func GetContractCreationBlock(cProps *ConnectionProps) (uint64, error) {
 	// Check if contract exists at the found block
 	code, err := cProps.Client.CodeAt(ctx, cProps.KtAddr, big.NewInt(int64(low)))
 	if err != nil {
-		// THis isn't working but it's close: return big.Int(0), fmt.Errorf("failed to get code at block %d: %v", low, err)
-		return 0, fmt.Errorf("contract creation block not found")
+		return 0, fmt.Errorf("failed to get code at block %d: %v", low, err)
 	}
 	if len(code) == 0 {
 		return 0, fmt.Errorf("contract creation block not found")
