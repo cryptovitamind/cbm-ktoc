@@ -18,6 +18,7 @@ POOL_ADDR=
 TKN_ADDR=
 TKN_PRC_ADDR=
 KT_ADDR=
+QUERY_DELAY=
 ETH_ENDPOINT=http://127.0.0.1:8545
 KT_START_BLOCK=<Creation block of KT_ADDR - Use -ktBlock to determine block number>
 ```

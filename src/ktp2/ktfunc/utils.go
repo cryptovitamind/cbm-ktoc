@@ -24,27 +24,27 @@ func GetPublicAddress(privateKey *ecdsa.PrivateKey) common.Address {
 
 // printBalanceOfAddr logs the ETH balance of the specified address.
 // Returns an error if the balance cannot be retrieved.
-func PrintBalanceOfAddr(cProps *ConnectionProps) error {
+func PrintBalanceOfAddr(cProps *ConnectionProps, pubKey common.Address) error {
 	// Validate inputs
 	if cProps.Client == nil {
 		log.Errorf("Ethereum client is nil")
 		return fmt.Errorf("ethereum client is nil")
 	}
-	if cProps == nil || cProps.MyPubKey == (common.Address{}) {
-		log.Errorf("Invalid ConnectionProps - Public key: %v", cProps.MyPubKey)
+	if pubKey == (common.Address{}) {
+		log.Errorf("Invalid ConnectionProps - Public key: %v", pubKey)
 		return fmt.Errorf("invalid ConnectionProps: public key is invalid")
 	}
 
 	// Get balance
-	balance, err := cProps.Client.BalanceAt(context.Background(), cProps.MyPubKey, nil)
+	balance, err := cProps.Client.BalanceAt(context.Background(), pubKey, nil)
 	if err != nil {
-		log.Errorf("Failed to get balance for %s: %v", cProps.MyPubKey.Hex(), err)
+		log.Errorf("Failed to get balance for %s: %v", pubKey.Hex(), err)
 		return fmt.Errorf("failed to get balance: %w", err)
 	}
 
 	// Log balance in ETH
 	ethBalance := new(big.Float).Quo(new(big.Float).SetInt(balance), big.NewFloat(1e18))
-	log.Debugf("Balance of %s: %s ETH", cProps.MyPubKey.Hex(), ethBalance.String())
+	log.Infof("Balance of %s: %s ETH", pubKey.Hex(), ethBalance.String())
 	return nil
 }
 

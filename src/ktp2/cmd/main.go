@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"ktp2/src/abis"
+	"ktp2/src/abis/ktv2"
 	"ktp2/src/ktp2/ktfunc"
 	"ktp2/src/ktp2/tests"
 	"math/big"
@@ -40,25 +40,34 @@ func LogOperationStart(operation string) {
 }
 
 type Flags struct {
-	continuous       bool
-	giveAmount       float64
-	stakeAmount      int64
-	epochDuration    int64
-	moveBlockForward int64
-	keys             bool
-	initTestWallets  bool
-	vote             bool
-	run              bool
-	findKts          bool
-	createKt         bool
-	gasLimit         uint64
-	blocksToWait     uint64
-	ktBlock          bool
-	help             bool
-	verbose          bool
-	ktProps          bool
-	queryFees        string
-	withdrawFees     string
+	continuous            bool
+	giveAmount            float64
+	stakeAmount           int64
+	epochDuration         int64
+	moveBlockForward      int64
+	keys                  bool
+	initTestWallets       bool
+	logStakesAndWithdraws string
+	vote                  bool
+	run                   bool
+	findKts               bool
+	createKt              bool
+	gasLimit              uint64
+	blocksToWait          uint64
+	ktBlock               bool
+	help                  bool
+	verbose               bool
+	ktProps               bool
+	queryFees             string
+	withdrawFees          bool
+	printEvents           bool
+	v2Uniswap             bool
+	voteToRemoveOC        string
+	voteToAddOC           string
+	resetVoteToAddOC      string
+	resetVoteToRemoveOC   string
+	dataForOCVote         string
+	printOCVoteEvents     string
 }
 
 func main() {
@@ -111,7 +120,7 @@ func displayStartupBanner() {
 	fmt.Print("──────────────────────────────────────────────────────────────────────────────────────────\n")
 	fmt.Print("\n")
 	figure.NewColorFigure("KT OC", "larry3d", "red", true).Print()
-	figure.NewColorFigure("v0.1-beta", "larry3d", "red", true).Print()
+	figure.NewColorFigure("v0.2-beta", "larry3d", "red", true).Print()
 	fmt.Print("\n")
 	figure.NewColorFigure("shinatoken", "binary", "red", true).Print()
 	fmt.Print("\n")
@@ -146,12 +155,20 @@ func parseFlags() Flags {
 	findKts := flag.Bool("findKts", false, "List all KT contracts deployed by the factory contract specified by FACTORY_ADDR. Useful for auditing or exploring existing KTs.")
 	ktBlock := flag.Bool("ktBlock", false, "Print the block number where the KT contract (specified in KT_ADDR) was created. Helpful for debugging or setting KT_START_BLOCK.")
 	createKt := flag.Bool("createKt", false, "Deploy a new KT contract via the factory contract. Requires FACTORY_ADDR and sufficient ETH/gas. Prompts for confirmation.")
-	ktProps := flag.Bool("ktProps", false, "Dislpay information about an existing KT contract (specified in KT_ADDR). Useful for debugging or testing KT behavior.")
+	ktProps := flag.Bool("ktProps", false, "Display information about an existing KT contract (specified in KT_ADDR). Useful for debugging or testing KT behavior.")
 	gasLimit := flag.Uint64("gasLimit", ktfunc.DefaultGasLimit, fmt.Sprintf("Set the gas limit for transactions (default is %d. Use 3000000 for contract creation).", ktfunc.DefaultGasLimit))
 	blocksToWait := flag.Uint64("blocksToWait", ktfunc.DefaultBlocksToWait, fmt.Sprintf("Set the number of blocks to wait for transactions to be mined (default is %d).", ktfunc.DefaultBlocksToWait))
 	verbose := flag.Bool("verbose", false, "Display verbose output during operations.")
 	queryFees := flag.String("queryFees", "", "Query the current gas fees for a specified block range with syntax <startBlock>:<endBlock>")
-	withdrawFees := flag.String("withdrawFees", "", "Withdraw owed fees from kt. syntax: <block1>,<block2>,<blockn>,etc...")
+	withdrawFees := flag.Bool("withdrawFees", false, "Withdraw owed fees from kt. syntax: <block1>,<block2>,<blockn>,etc...")
+	printEvents := flag.Bool("printEvents", false, "Print the contents of the cache for debugging purposes.")
+	v2Uniswap := flag.Bool("v2Uniswap", false, "Use Uniswap V3 instead of V2 for token swaps. Set this if your token pool is V3.")
+	voteToRemoveOC := flag.String("voteToRemoveOC", "", "Vote to remove an OC with the given Ethereum address")
+	voteToAddOC := flag.String("voteToAddOC", "", "Vote to add an OC with the given Ethereum address")
+	resetVoteToAddOC := flag.String("resetVoteToAddOC", "", "Reset vote to add an OC with the given Ethereum address")
+	resetVoteToRemoveOC := flag.String("resetVoteToRemoveOC", "", "Reset vote to remove an OC with the given Ethereum address")
+	dataForOCVote := flag.String("dataForOCVote", "", "Data string for the OC vote (required if using voting flags)")
+	printOCVoteEvents := flag.String("printOCVoteEvents", "", "Print all OC vote events between <fromBlock>:<toBlock>")
 
 	// Testing Commands (for development and testing)
 	continuous := flag.Bool("continuous", false, "TESTING: Run continuous operations in a loop, simulating various actions (e.g., staking, giving ETH). For development use only.")
@@ -161,10 +178,11 @@ func parseFlags() Flags {
 	moveBlockForward := flag.Int64("moveBlockForward", 0, "TESTING: Advance a test Ethereum node by n blocks (e.g., 10). Simulates blockchain progression.")
 	keys := flag.Bool("keys", false, "TESTING: Display deterministic private keys for test wallets. For development only—do not use these keys on mainnet!")
 	initTestWallets := flag.Bool("init", false, "TESTING: Initialize test wallets with ETH and tokens. Sets up a testing environment. Requires sufficient funds in MY_PUBLIC_KEY.")
+	logStakesAndWithdraws := flag.String("logStakesAndWithdraws", "", "TESTING: Gather stakes and withdrawals from the KT contract. Useful for testing stake data collection logic. Syntax: <startBlock>:<endBlock>.")
 
 	// Custom usage message with guides
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "\n🌟 Welcome to KT v0.1 (beta) - CLI 🌟\n")
+		fmt.Fprintf(os.Stderr, "\n🌟 Welcome to KT v0.2 (beta) - CLI 🌟\n")
 		fmt.Fprintf(os.Stderr, "========================================================\n")
 		fmt.Fprintf(os.Stderr, "KT is an experimental blockchain tool. Use these flags to interact with KTv2 contracts.\n")
 		fmt.Fprintf(os.Stderr, "Set required environment variables (e.g., MY_PUBLIC_KEY, ETH_ENDPOINT) in a .env file.\n")
@@ -183,7 +201,9 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -epochDuration <n>  %s\n", "Set epoch duration in blocks (e.g., -epochDuration 3600). Run with -ktProps to see current value.")
 		fmt.Fprintf(os.Stderr, "  -verbose            %s\n", "Display verbose output during operations.")
 		fmt.Fprintf(os.Stderr, "  -queryFees <n>:<n>  %s\n", "Query the reward amount owed this node. <startBlock>:<endBlock>.")
-		fmt.Fprintf(os.Stderr, "  -withdrawFees <blocks> %s\n", "Withdraw owed fees from kt. <blocks> is a comma-separated list of block numbers.")
+		fmt.Fprintf(os.Stderr, "  -v1Uniswap          %s\n", "Use Uniswap V1 instead of V2 for token swaps.")
+		fmt.Fprintf(os.Stderr, "  -withdrawFees       %s\n", "Withdraw owed fees from kt.")
+		PrintOCUsage()
 
 		fmt.Fprintf(os.Stderr, "\n🛠️ Testing Commands (Local Dev Use Only):\n")
 		fmt.Fprintf(os.Stderr, "  -continuous         %s\n", "Run continuous operations in a loop for testing.")
@@ -192,6 +212,8 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -moveBlockForward <n> %s\n", "Advance the test node by n blocks (e.g., -moveBlockForward 10).")
 		fmt.Fprintf(os.Stderr, "  -keys               %s\n", "Display deterministic private keys for testing.")
 		fmt.Fprintf(os.Stderr, "  -init               %s\n", "Initialize test wallets with ETH and tokens.")
+		fmt.Fprintf(os.Stderr, "  -logStakesAndWithdraws <start:end> %s\n", "Gather stakes and withdrawals from the KT contract. Syntax: <startBlock>:<endBlock>.")
+		fmt.Fprintf(os.Stderr, "  -printEvents       %s\n", "Print the contents of the events cache for debugging purposes.")
 
 		fmt.Fprintf(os.Stderr, "\n💡 Usage Tips:\n")
 		fmt.Fprintf(os.Stderr, "  - Use -gasLimit for operations like -createKt (e.g., 3000000).\n")
@@ -202,25 +224,34 @@ func parseFlags() Flags {
 	flag.Parse()
 
 	return Flags{
-		continuous:       *continuous,
-		giveAmount:       *giveAmount,
-		stakeAmount:      *stakeAmount,
-		epochDuration:    *epochDuration,
-		moveBlockForward: *moveBlockForward,
-		keys:             *keys,
-		initTestWallets:  *initTestWallets,
-		vote:             *vote,
-		run:              *run,
-		findKts:          *findKts,
-		createKt:         *createKt,
-		gasLimit:         *gasLimit,
-		blocksToWait:     *blocksToWait,
-		ktBlock:          *ktBlock,
-		help:             *help,
-		ktProps:          *ktProps,
-		verbose:          *verbose,
-		queryFees:        *queryFees,
-		withdrawFees:     *withdrawFees,
+		continuous:            *continuous,
+		giveAmount:            *giveAmount,
+		stakeAmount:           *stakeAmount,
+		epochDuration:         *epochDuration,
+		moveBlockForward:      *moveBlockForward,
+		keys:                  *keys,
+		initTestWallets:       *initTestWallets,
+		logStakesAndWithdraws: *logStakesAndWithdraws,
+		vote:                  *vote,
+		run:                   *run,
+		findKts:               *findKts,
+		createKt:              *createKt,
+		gasLimit:              *gasLimit,
+		blocksToWait:          *blocksToWait,
+		ktBlock:               *ktBlock,
+		help:                  *help,
+		ktProps:               *ktProps,
+		verbose:               *verbose,
+		queryFees:             *queryFees,
+		withdrawFees:          *withdrawFees,
+		v2Uniswap:             *v2Uniswap,
+		printEvents:           *printEvents,
+		voteToRemoveOC:        *voteToRemoveOC,
+		voteToAddOC:           *voteToAddOC,
+		resetVoteToAddOC:      *resetVoteToAddOC,
+		resetVoteToRemoveOC:   *resetVoteToRemoveOC,
+		printOCVoteEvents:     *printOCVoteEvents,
+		dataForOCVote:         *dataForOCVote,
 	}
 }
 
@@ -234,9 +265,40 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 		log.SetLevel(log.DebugLevel)
 	}
 
+	if len(flags.voteToRemoveOC) > 0 || len(flags.voteToAddOC) > 0 ||
+		len(flags.resetVoteToRemoveOC) > 0 || len(flags.resetVoteToAddOC) > 0 ||
+		len(flags.printOCVoteEvents) > 0 {
+		vf := VoteFlags{
+			VoteToRemoveOC:      flags.voteToRemoveOC,
+			VoteToAddOC:         flags.voteToAddOC,
+			ResetVoteToAddOC:    flags.resetVoteToAddOC,
+			ResetVoteToRemoveOC: flags.resetVoteToRemoveOC,
+			DataForOCVote:       flags.dataForOCVote,
+			PrintOCVoteEvents:   flags.printOCVoteEvents,
+		}
+
+		HandleVoting(cProps, vf)
+	}
+
 	if flags.initTestWallets {
 		LogOperationStart("Initializing test wallets")
 		initTestWallets(cProps)
+	}
+
+	if len(flags.logStakesAndWithdraws) > 0 {
+		LogOperationStart("Logging stakes and withdrawals")
+		startBlock, endBlock, err := ktfunc.ParseStartEndBlocks(flags.logStakesAndWithdraws)
+		if err != nil {
+			log.Fatalf("Invalid start:end blocks format: %s", flags.logStakesAndWithdraws)
+		}
+
+		startBlockBig := big.NewInt(int64(startBlock))
+		endBlockBig := big.NewInt(int64(endBlock))
+
+		_, err = ktfunc.GatherStakesAndWithdraws(cProps, cProps.Kt, startBlockBig, endBlockBig)
+		if err != nil {
+			log.Errorf("Failed to gather stakes and withdrawals: %v", err)
+		}
 	}
 
 	if len(flags.queryFees) > 0 {
@@ -244,8 +306,8 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 		ktfunc.GetOCFeesOwed(cProps, flags.queryFees)
 	}
 
-	if len(flags.withdrawFees) > 0 {
-		ktfunc.WithdrawOCFees(cProps, flags.withdrawFees)
+	if flags.withdrawFees {
+		ktfunc.WithdrawOCFees(cProps, "")
 	}
 
 	if flags.moveBlockForward != 0 {
@@ -316,13 +378,25 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 	}
 
 	if flags.ktProps {
-		LogOperationStart("Displaying KT contract properties")
+		LogOperationStart("Displaying KT contract properties for contract at " + cProps.KtAddr.Hex())
 		ktfunc.PrintKtContractVariables(cProps)
+	}
+
+	if flags.printEvents {
+		LogOperationStart("Printing database contents")
+		err := ktfunc.PrintEvents(cProps.KtAddr)
+		if err != nil {
+			log.Errorf("Error printing database contents: %v", err)
+		}
 	}
 }
 
 // initTestWallets initializes test wallets by sending ETH and tokens.
 func initTestWallets(cProps *ktfunc.ConnectionProps) {
+
+	ktfunc.PrintBalanceOfAddr(cProps, cProps.MyPubKey)
+	tests.PrintBalances(cProps, cProps.MyPubKey)
+
 	keyPairs := tests.DeterministicPrivateKeys(10)
 	for _, kp := range keyPairs {
 		log.Printf("Initializing wallet: %s", kp.Address)
@@ -369,19 +443,27 @@ func testContinuousOperations(cProps *ktfunc.ConnectionProps) {
 
 	for {
 		LogOperationStart("Continuous operation iteration")
-		moveBlockForward := rand.Int63n(81) + 2
-		stakeAmount := rand.Int63n(9001) + 1000
+		moveBlockForward := rand.Int63n(10) + 2
+		withdrawAmount := rand.Int63n(90) + 10
 		giveAmount := rand.Float64()*0.1 + 0.001
 
 		log.Infof("Moving blocks: %d", moveBlockForward)
-		log.Infof("Staking: %d tokens", stakeAmount)
+		log.Infof("Withdrawing: %d tokens", withdrawAmount)
 		log.Infof("Giving: %.4f ETH", giveAmount)
 
 		tests.MoveBlocksForward(cProps, &moveBlockForward, cProps.GasLimit)
 
 		for _, kp := range keyPairs {
+			stakeAmount := rand.Int63n(9001) + 1000
+			log.Infof("Staking: %d tokens", stakeAmount)
 			log.Infof("Staking for: %s", kp.Address)
 			tests.StakeTokensToKt(cProps, kp.PrivateKey, big.NewInt(stakeAmount))
+		}
+
+		// need to call this function now: func WithdrawTokensFromKt(cProps *ktfunc.ConnectionProps, privateKey *ecdsa.PrivateKey, amount *big.Int)
+		for _, kp := range keyPairs {
+			log.Infof("Withdrawing tokens for: %s", kp.Address)
+			tests.WithdrawTokensFromKt(cProps, kp.PrivateKey, big.NewInt(withdrawAmount))
 		}
 
 		giveAmountWei := big.NewInt(int64(giveAmount * 1e18))
@@ -418,6 +500,19 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 	// Use the defined gas limit.
 	cProps.GasLimit = flags.gasLimit
 	cProps.BlocksToWait = flags.blocksToWait
+	cProps.V2Uniswap = flags.v2Uniswap
+
+	// Set QueryDelay from environment variable or default to 100ms
+	queryDelayMs := 100 // Default to 100ms
+	if delayStr := os.Getenv("QUERY_DELAY"); delayStr != "" {
+		if delay, err := strconv.Atoi(delayStr); err == nil && delay >= 0 {
+			queryDelayMs = delay
+		} else {
+			log.Warnf("Invalid QUERY_DELAY value '%s', using default of 100ms", delayStr)
+		}
+	}
+	cProps.QueryDelay = time.Duration(queryDelayMs) * time.Millisecond
+	log.Infof("Query delay set to %dms", queryDelayMs)
 
 	// Connect to Ethereum node.
 	client, err := ethclient.Dial(mstProps.EthEndpoint)
@@ -430,7 +525,7 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 
 	// Set public key.
 	cProps.MyPubKey = ktfunc.ToAddr(mstProps.MyPublicKey)
-	ktfunc.PrintBalanceOfAddr(cProps)
+	ktfunc.PrintBalanceOfAddr(cProps, cProps.MyPubKey)
 
 	privateKey, err := crypto.HexToECDSA(mstProps.MyPrivateKey)
 	if err != nil {
@@ -478,7 +573,7 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 
 // getKtInstance initializes and returns a KT contract instance for the given address.
 // Returns the instance or nil if instantiation fails.
-func getKtInstance(client bind.ContractBackend, ktAddr common.Address) (*abis.Ktv2, error) {
+func getKtInstance(client bind.ContractBackend, ktAddr common.Address) (ktfunc.Ktv2Interface, error) {
 	// Validate inputs
 	if client == nil {
 		log.Errorf("Invalid ConnectionProps - Client: %v", client)
@@ -486,7 +581,7 @@ func getKtInstance(client bind.ContractBackend, ktAddr common.Address) (*abis.Kt
 	}
 
 	// Instantiate the KT contract
-	instance, err := abis.NewKtv2(ktAddr, client)
+	instance, err := ktv2.NewKtv2(ktAddr, client)
 	if err != nil {
 		log.Errorf("Failed to instantiate KT contract at %s: %v", ktAddr.Hex(), err)
 		return nil, fmt.Errorf("failed to instantiate KT contract: %w", err)

@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
-	"ktp2/src/abis"
 	"math/big"
 	"os"
 	"sort"
@@ -53,7 +52,7 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	log.Debugf("Voting and rewarding")
 
 	// Get current block
-	currentBlock, err := getCurrentBlock(cProps)
+	currentBlockHeader, err := getCurrentBlock(cProps)
 	if err != nil {
 		log.Errorf("Failed to get current block: %v", err)
 		return fmt.Errorf("failed to get current block: %w", err)
@@ -67,8 +66,8 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	}
 
 	// Check if it's time to vote
-	if !IsTimeToVote(endBlock, currentBlock) {
-		status := fmt.Sprintf("Not time to vote yet - Current block: %d, End block: %d", currentBlock.NumberU64(), endBlock)
+	if !IsTimeToVote(endBlock, currentBlockHeader) {
+		status := fmt.Sprintf("Not time to vote yet - Current block: %d, End block: %d", currentBlockHeader.Number.Uint64(), endBlock)
 		fmt.Fprintf(os.Stdout, "\r\033[1;36m%s\033[0m", status) // Cyan text, reset color
 		os.Stdout.Sync()                                        // Ensure it flushes immediately
 		return nil                                              // Not an error, just not time yet
@@ -80,7 +79,7 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	}
 
 	// Gather stake and withdrawal events
-	stakeDataMap, err := gatherStakesAndWithdraws(cProps.Kt, cProps.KtBlock, endBlock)
+	stakeDataMap, err := GatherStakesAndWithdraws(cProps, cProps.Kt, cProps.KtBlock, endBlock)
 	if err != nil {
 		log.Errorf("Failed to gather stakes and withdraws: %v", err)
 		return fmt.Errorf("failed to gather stakes: %w", err)
@@ -95,7 +94,6 @@ func VoteAndReward(cProps *ConnectionProps) error {
 
 	if totalMin.Cmp(big.NewInt(0)) == 0 {
 		log.Warn("No stakes found.")
-		return nil
 	}
 
 	// Print minimum stakes
@@ -104,11 +102,10 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	// Calculate probabilities for each wallet
 	if !calculateProbsForEachWallet(stakeDataMinsMap, totalMin) {
 		log.Warn("No valid probabilities calculated")
-		return nil
 	}
 
 	// Vote and potentially reward the winner
-	winner, err := calculateVoteAndReward(stakeDataMinsMap, startBlock, endBlock, cProps)
+	winner, err := calculateVoteAndReward(stakeDataMinsMap, startBlock, endBlock, cProps, totalMin)
 	if err != nil {
 		log.Errorf("Failed to vote and reward: %v", err)
 		return fmt.Errorf("failed to vote and reward: %w", err)
@@ -122,7 +119,12 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	return nil
 }
 
-func calculateVoteAndReward(stakeDataMinsMap map[common.Address]*UserStakeData, epochStartBlock, endEpochBlockNumber *big.Int, cProps *ConnectionProps) (common.Address, error) {
+func calculateVoteAndReward(
+	stakeDataMinsMap map[common.Address]*UserStakeData,
+	epochStartBlock, endEpochBlockNumber *big.Int,
+	cProps *ConnectionProps,
+	totalMin *big.Int) (common.Address, error) {
+
 	log.Debugf("Calculating vote and reward")
 
 	// Validate inputs
@@ -144,14 +146,18 @@ func calculateVoteAndReward(stakeDataMinsMap map[common.Address]*UserStakeData, 
 	log.Printf("Epoch start block: %d, Next block: %d", epochStartBlock.Uint64(), nextBlockNumber.Uint64())
 
 	// Fetch next block
-	nextBlock, err := cProps.Client.BlockByNumber(context.Background(), nextBlockNumber)
+	nextBlock, err := cProps.Client.HeaderByNumber(context.Background(), nextBlockNumber)
 	if err != nil {
 		log.Errorf("Failed to get next block %d: %v", nextBlockNumber.Uint64(), err)
 		return common.Address{}, fmt.Errorf("failed to get next block: %w", err)
 	}
-	log.Infof("Next block: %d", nextBlock.NumberU64())
+	log.Infof("Next block: %d", nextBlock.Number)
 
 	// Calculate winning wallet
+	if totalMin.Cmp(big.NewInt(0)) == 0 {
+		log.Debug("Total minimum stake is zero - Defaulting to no winner.")
+	}
+
 	winner, err := calcWinningWallet(stakeDataMinsMap, nextBlock.Hash())
 	if err != nil {
 		log.Errorf("Failed to calculate winning wallet: %v", err)
@@ -159,7 +165,6 @@ func calculateVoteAndReward(stakeDataMinsMap map[common.Address]*UserStakeData, 
 	}
 	if winner == (common.Address{}) {
 		log.Warn("No winner determined")
-		return winner, nil
 	}
 	log.Infof("Winner selected: %s", winner.Hex())
 
@@ -247,18 +252,18 @@ func getStartAndEndEpochBlocks(cProps *ConnectionProps) (*big.Int, *big.Int, err
 
 // getCurrentBlock retrieves the latest block from the blockchain.
 // Returns the block or nil if an error occurs.
-func getCurrentBlock(cProps *ConnectionProps) (*types.Block, error) {
+func getCurrentBlock(cProps *ConnectionProps) (*types.Header, error) {
 	log.Debug("Fetching current block")
 
 	// Fetch the latest block (nil block number means latest)
-	block, err := cProps.Client.BlockByNumber(context.Background(), nil)
+	block, err := cProps.Client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
 		log.Errorf("Failed to retrieve current block: %v", err)
 		return nil, fmt.Errorf("failed to get current block: %w", err)
 	}
 
 	// Log block details with pretty formatting
-	log.Debugf("Block number: %d", block.NumberU64())
+	log.Debugf("Block number: %d", block.Number)
 	log.Debugf("Block hash: %s", block.Hash().Hex())
 
 	return block, nil
@@ -266,7 +271,10 @@ func getCurrentBlock(cProps *ConnectionProps) (*types.Block, error) {
 
 // defaultCalculateWinningWallet selects the winning wallet based on stake probabilities and a random seed.
 // Returns the winning address or a zero address if no winner can be determined.
-func defaultCalculateWinningWallet(stakeDataMinsMap map[common.Address]*UserStakeData, randomNumber common.Hash) (common.Address, error) {
+func defaultCalculateWinningWallet(
+	stakeDataMinsMap map[common.Address]*UserStakeData,
+	randomNumber common.Hash) (common.Address, error) {
+
 	LogOperationStart("Calculating winning wallet")
 
 	// Validate inputs
@@ -275,7 +283,7 @@ func defaultCalculateWinningWallet(stakeDataMinsMap map[common.Address]*UserStak
 		return common.Address{}, fmt.Errorf("stake data map is nil")
 	}
 	if len(stakeDataMinsMap) == 0 {
-		log.Info("No stakes found in the map")
+		log.Info("No stakes found in the map. Defaulting to no winner.")
 		return common.Address{}, nil
 	}
 
@@ -334,6 +342,12 @@ func defaultCalculateWinningWallet(stakeDataMinsMap map[common.Address]*UserStak
 func calculateProbsForEachWallet(stakeDataMinsMap map[common.Address]*UserStakeData, totalMin *big.Int) bool {
 	foundSomething := false
 
+	if totalMin.Cmp(big.NewInt(0)) == 0 {
+		log.Warn("Total minimum stake is zero - Cannot calculate probabilities")
+		return false
+	}
+
+	// Calculate probabilities for each wallet
 	for addr, stakeData := range stakeDataMinsMap {
 		foundSomething = true
 
@@ -360,7 +374,7 @@ type BlockNumberer interface {
 	Number() *big.Int
 }
 
-func IsTimeToVote(endBlock *big.Int, block BlockNumberer) bool {
+func IsTimeToVote(endBlock *big.Int, blockHeader *types.Header) bool {
 	log.Debugf("Checking voting time")
 
 	// Validate inputs
@@ -368,12 +382,12 @@ func IsTimeToVote(endBlock *big.Int, block BlockNumberer) bool {
 		log.Errorf("End block is nil")
 		return false
 	}
-	if block == nil {
+	if blockHeader == nil {
 		log.Errorf("Current block is nil")
 		return false
 	}
 
-	currentNum := block.Number()
+	currentNum := blockHeader.Number
 	if currentNum == nil {
 		log.Errorf("Current block number is nil")
 		return false
@@ -390,6 +404,11 @@ func IsTimeToVote(endBlock *big.Int, block BlockNumberer) bool {
 }
 
 func rewardWinningWallet(cProps *ConnectionProps, winner common.Address) error {
+	if winner == (common.Address{}) {
+		log.Warnf("Skipping reward for zero address: %s", winner.Hex())
+		return nil
+	}
+
 	log.Printf("Rewarding winning wallet: %s", winner.Hex())
 
 	auth, err := NewTransactor(cProps)
@@ -538,6 +557,11 @@ func getVoteCountAndRequired(cProps *ConnectionProps, epochStartBlock *big.Int, 
 }
 
 func vote(cProps *ConnectionProps, recipient common.Address, data string) error {
+	if recipient == (common.Address{}) {
+		log.Warnf("Skipping vote for zero address: %s", recipient.Hex())
+		return nil
+	}
+
 	auth, err := NewTransactor(cProps)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %v", err)
@@ -571,9 +595,8 @@ func vote(cProps *ConnectionProps, recipient common.Address, data string) error 
 
 // gatherStakesAndWithdraws collects stake and withdrawal events for a KT contract from block startBlock to endBlock.
 // Returns a map of address to block-specific stake data or an error if filtering fails.
-func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.Int) (map[common.Address]map[uint64]*UserStakeData, error) {
+func GatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, startBlock *big.Int, endBlock *big.Int) (map[common.Address]map[uint64]*UserStakeData, error) {
 	log.Debugf("Gathering stakes and withdrawals")
-
 	// Validate inputs
 	if kt == nil {
 		log.Errorf("KT contract instance is nil")
@@ -587,15 +610,23 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 		log.Errorf("Start block %d exceeds end block %d", startBlock.Uint64(), endBlock.Uint64())
 		return nil, fmt.Errorf("start block %d exceeds end block %d", startBlock.Uint64(), endBlock.Uint64())
 	}
+	// Ensure cache directory exists
+	cacheDir := "cache"
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		log.Errorf("Failed to create cache directory: %v", err)
+		return nil, fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	// Construct database file name using first 7 characters of contract address
+	dbName := fmt.Sprintf("%s/%s.db", cacheDir, cProps.KtAddr.Hex()[:7])
 
 	// Open DB
-	db, err := bbolt.Open("events.db", 0600, nil)
+	db, err := bbolt.Open(dbName, 0600, nil)
 	if err != nil {
-		log.Errorf("Failed to open database: %v", err)
+		log.Errorf("Failed to open database %s: %v", dbName, err)
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 	defer db.Close()
-
 	// Create bucket
 	err = db.Update(func(tx *bbolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists([]byte("chunks"))
@@ -605,23 +636,18 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 		log.Errorf("Failed to create bucket: %v", err)
 		return nil, fmt.Errorf("failed to create bucket: %w", err)
 	}
-
 	chunkSize := uint64(500)
 	startU := startBlock.Uint64()
 	endU := endBlock.Uint64()
-
 	var stakeEvents []StakeEvent
 	var withdrawEvents []WithdrawEvent
-
 	for currentStart := startU; currentStart <= endU; currentStart += chunkSize {
 		currentEnd := currentStart + chunkSize - 1
 		if currentEnd > endU {
 			currentEnd = endU
 		}
-
 		key := make([]byte, 8)
 		binary.BigEndian.PutUint64(key, currentStart)
-
 		var chunk ChunkEvents
 		err = db.View(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte("chunks"))
@@ -637,21 +663,22 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 			log.Debugf("Loaded cached chunk %d-%d", currentStart, currentEnd)
 			continue
 		}
-
-		// Query
+		// Query with rate limiting using user-configurable delay
+		if cProps.QueryDelay > 0 {
+			time.Sleep(cProps.QueryDelay)
+		}
 		endPtr := currentEnd
 		opts := &bind.FilterOpts{
 			Start:   currentStart,
 			End:     &endPtr,
 			Context: context.Background(),
 		}
-
+		log.Debugf("Querying stake events for block range %d-%d", currentStart, currentEnd)
 		stakeIter, err := kt.FilterStaked(opts)
 		if err != nil {
 			log.Errorf("Failed to filter stake events for %d-%d: %v", currentStart, currentEnd, err)
 			return nil, fmt.Errorf("failed to filter stake events: %w", err)
 		}
-
 		var chunkStake []StakeEvent
 		for stakeIter.Next() {
 			e := stakeIter.Event
@@ -668,13 +695,16 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 		if err := stakeIter.Error(); err != nil {
 			log.Errorf("Stake iterator error: %v", err)
 		}
-
+		// Apply rate limiting for withdraw events
+		if cProps.QueryDelay > 0 {
+			time.Sleep(cProps.QueryDelay)
+		}
+		log.Debugf("Querying withdraw events for block range %d-%d", currentStart, currentEnd)
 		withdrawIter, err := kt.FilterWithdrew(opts)
 		if err != nil {
 			log.Errorf("Failed to filter withdrawal events for %d-%d: %v", currentStart, currentEnd, err)
 			return nil, fmt.Errorf("failed to filter withdrawal events: %w", err)
 		}
-
 		var chunkWithdraw []WithdrawEvent
 		for withdrawIter.Next() {
 			e := withdrawIter.Event
@@ -691,7 +721,6 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 		if err := withdrawIter.Error(); err != nil {
 			log.Errorf("Withdraw iterator error: %v", err)
 		}
-
 		// Store
 		err = db.Update(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte("chunks"))
@@ -709,14 +738,11 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 		} else {
 			log.Debugf("Stored chunk %d-%d", currentStart, currentEnd)
 		}
-
 		stakeEvents = append(stakeEvents, chunkStake...)
 		withdrawEvents = append(withdrawEvents, chunkWithdraw...)
 	}
-
 	// Build stakeDataMap
 	stakeDataMap := make(map[common.Address]map[uint64]*UserStakeData)
-
 	for _, e := range stakeEvents {
 		addr := e.Addr
 		if _, exists := stakeDataMap[addr]; !exists {
@@ -727,7 +753,6 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 		}
 		stakeDataMap[addr][e.Block].StakeAmount.Add(stakeDataMap[addr][e.Block].StakeAmount, e.Amount)
 	}
-
 	for _, e := range withdrawEvents {
 		addr := e.Addr
 		if _, exists := stakeDataMap[addr]; !exists {
@@ -738,8 +763,41 @@ func gatherStakesAndWithdraws(kt *abis.Ktv2, startBlock *big.Int, endBlock *big.
 		}
 		stakeDataMap[addr][e.Block].StakeAmount.Sub(stakeDataMap[addr][e.Block].StakeAmount, e.Amount)
 	}
-
 	log.Infof("Total addresses with events: %d", len(stakeDataMap))
+	// Enhanced verbose logging: Show status per wallet (address)
+	if log.GetLevel() >= log.DebugLevel { // Assuming verbose means debug level is enabled
+		var addresses []common.Address
+		for addr := range stakeDataMap {
+			addresses = append(addresses, addr)
+		}
+		sort.Slice(addresses, func(i, j int) bool { return addresses[i].Hex() < addresses[j].Hex() }) // Sort for consistent output
+		for _, addr := range addresses {
+			log.Debugf("Wallet status for %s:", addr.Hex())
+			blockData := stakeDataMap[addr]
+			if len(blockData) == 0 {
+				log.Debugf("  No events for this wallet")
+				continue
+			}
+			// Sort blocks for chronological order
+			var blocks []uint64
+			for blk := range blockData {
+				blocks = append(blocks, blk)
+			}
+			sort.Slice(blocks, func(i, j int) bool { return blocks[i] < blocks[j] })
+			currentStake := big.NewInt(0) // Track cumulative stake for status
+			for _, block := range blocks {
+				change := blockData[block].StakeAmount
+				currentStake = new(big.Int).Add(currentStake, change)
+				sign := "+"
+				if change.Sign() < 0 {
+					sign = ""
+				}
+				absChange := new(big.Int).Abs(change)
+				log.Debugf("  Block %d: Net change %s%s (Cumulative: %s)", block, sign, absChange.String(), currentStake.String())
+			}
+			log.Debugf("  Final cumulative stake for wallet: %s", currentStake.String())
+		}
+	}
 	return stakeDataMap, nil
 }
 
@@ -814,40 +872,51 @@ func findMinOverBlockRange(epochStartBlock, endBlock uint64, stakeDataMap map[co
 		}
 		sort.Slice(blocks, func(i, j int) bool { return blocks[i] < blocks[j] })
 
-		currentStake := big.NewInt(0)
-		var minStake *big.Int // nil until we hit the range
+		// ... (existing code up to sorting blocks)
 
-		// Process events in order
+		// Initialize
+		currentStake := big.NewInt(0)
+		var minStake *big.Int
+
+		// Process all events in order
+		var inRangeProcessed bool
 		for _, block := range blocks {
 			if blockData[block] == nil || blockData[block].StakeAmount == nil {
 				log.Warnf("Nil stake data for %s at block %d", addr.Hex(), block)
 				continue
 			}
-
-			// Update current stake with the net change
+			// Update current stake
 			currentStake.Add(currentStake, blockData[block].StakeAmount)
-			// Ensure stake doesn’t go negative (per contract logic)
 			if currentStake.Sign() < 0 {
 				log.Warnf("Negative stake computed for %s at block %d: %s - Setting to zero", addr.Hex(), block, currentStake.String())
 				currentStake.SetInt64(0)
 			}
-
-			// If within the range, update minStake
-			if block >= epochStartBlock && block <= endBlock {
+			// If this block is before the range, skip min update but track for initial
+			if block < epochStartBlock {
+				continue
+			}
+			// At this point, block >= epochStartBlock
+			// Before any in-range updates, consider the initial stake (once)
+			if !inRangeProcessed {
 				if minStake == nil || currentStake.Cmp(minStake) < 0 {
 					minStake = new(big.Int).Set(currentStake)
 				}
-				log.Debugf("Stake update for %s at %d - Current: %s, Min: %s", addr.Hex(), block, currentStake.String(), minStake.String())
+				inRangeProcessed = true
 			}
+			// Now update min with post-change stake
+			if minStake == nil || currentStake.Cmp(minStake) < 0 {
+				minStake = new(big.Int).Set(currentStake)
+			}
+			log.Debugf("Stake update for %s at %d - Current: %s, Min: %s", addr.Hex(), block, currentStake.String(), minStake.String())
 		}
 
-		// Handle users with no events in range but prior stake
+		// After all events: If no in-range events but prior stake >0, set min to that initial
 		if minStake == nil && currentStake.Cmp(big.NewInt(0)) > 0 {
 			minStake = new(big.Int).Set(currentStake)
 			log.Debugf("No events in range for %s, using stake at end: %s", addr.Hex(), minStake.String())
 		}
 
-		// Include in results if minimum stake is positive
+		// Include if min >0
 		if minStake != nil && minStake.Cmp(big.NewInt(0)) > 0 {
 			addressMins[addr] = &UserStakeData{StakeAmount: minStake}
 			totalMin.Add(totalMin, minStake)

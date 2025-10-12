@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"ktp2/src/abis"
+	"ktp2/src/abis/shib"
 	"ktp2/src/ktp2/ktfunc"
 	"math/big"
 
@@ -13,30 +13,59 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// NewTransactorWithKey is a new helper that uses a specific private key (instead of always cProps.MyPrivateKey).
+func NewTransactorWithKey(cProps *ktfunc.ConnectionProps, privateKey *ecdsa.PrivateKey) (*bind.TransactOpts, error) {
+	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, cProps.ChainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transactor: %w", err)
+	}
+	if cProps.GasLimit > ktfunc.DefaultGasLimit {
+		auth.GasLimit = cProps.GasLimit
+	}
+	return auth, nil
+}
+
 func StakeTokensToKt(cProps *ktfunc.ConnectionProps, privateKey *ecdsa.PrivateKey, amount *big.Int) error {
 	testToken, err := GetTestToken(cProps)
 	if err != nil {
 		return fmt.Errorf("failed to initialize token contract: %w", err)
 	}
-
-	// Prepare transaction options
-	auth, err := ktfunc.NewTransactor(cProps)
+	// Use the new transactor with the provided private key
+	auth, err := NewTransactorWithKey(cProps, privateKey)
 	if err != nil {
 		return err
 	}
-
 	if err := executeIncreaseAllowance(cProps, testToken, auth, amount); err != nil {
 		return err
 	}
-
 	if err := executeStake(cProps, auth, amount); err != nil {
 		return err
 	}
-
 	return logTotalStaked(cProps, privateKey)
 }
 
-func executeIncreaseAllowance(cProps *ktfunc.ConnectionProps, token *abis.Shib, auth *bind.TransactOpts, amount *big.Int) error {
+func WithdrawTokensFromKt(cProps *ktfunc.ConnectionProps, privateKey *ecdsa.PrivateKey, amount *big.Int) error {
+	// Use the transactor with the provided private key
+	auth, err := NewTransactorWithKey(cProps, privateKey)
+	if err != nil {
+		return err
+	}
+	if err := executeWithdraw(cProps, auth, amount); err != nil {
+		return err
+	}
+	return logTotalStaked(cProps, privateKey) // Reuse to log updated total after withdraw
+}
+
+func executeWithdraw(cProps *ktfunc.ConnectionProps, auth *bind.TransactOpts, amount *big.Int) error {
+	tx, err := cProps.Kt.Withdraw(auth, amount)
+	if err != nil {
+		return fmt.Errorf("failed to withdraw tokens: %w", err)
+	}
+	log.Infof("Withdraw sent: %s", tx.Hash().String())
+	return waitAndCheckTx(cProps, tx)
+}
+
+func executeIncreaseAllowance(cProps *ktfunc.ConnectionProps, token *shib.Shib, auth *bind.TransactOpts, amount *big.Int) error {
 	tx, err := token.IncreaseAllowance(auth, cProps.KtAddr, amount)
 	if err != nil {
 		return fmt.Errorf("failed to increase allowance: %w", err)
@@ -85,8 +114,8 @@ func logTotalStaked(props *ktfunc.ConnectionProps, privateKey *ecdsa.PrivateKey)
 	return nil
 }
 
-func GetTestToken(cProps *ktfunc.ConnectionProps) (*abis.Shib, error) {
-	token, err := abis.NewShib(ktfunc.ToAddr(cProps.Addresses.TknAddr), cProps.Backend)
+func GetTestToken(cProps *ktfunc.ConnectionProps) (*shib.Shib, error) {
+	token, err := shib.NewShib(ktfunc.ToAddr(cProps.Addresses.TknAddr), cProps.Backend)
 	if err != nil {
 		return nil, err
 	}

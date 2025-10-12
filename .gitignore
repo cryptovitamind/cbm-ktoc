@@ -44,4 +44,4 @@ coveragessh -T git@github.com
 
 # Test coverage results and unit test collateral
 src/ktp2/coverage
-src/ktp2/ktfunc/events.db
+*.db

@@ -70,7 +70,7 @@ func (m *MockEthClient) TransactionReceipt(ctx context.Context, txHash common.Ha
 	return nil, ethereum.NotFound
 }
 
-func (m *MockEthClient) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
+func (m *MockEthClient) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
 	if m.blockNumError != nil {
 		return nil, m.blockNumError
 	}
@@ -88,16 +88,27 @@ func (m *MockEthClient) BlockByNumber(ctx context.Context, number *big.Int) (*ty
 		ReceiptHash: common.Hash{},                                                                          // Zero hash
 	}
 
-	// Use types.NewBlockWithHeader to create a Block
-	block := types.NewBlockWithHeader(header)
-	return block, nil
+	return header, nil
 }
 
 func (m *MockEthClient) BlockNumber(ctx context.Context) (uint64, error) {
+	println("MockEthClient BlockNumber called, returning:", m.blockNumber)
 	if m.blockNumError != nil {
 		return 0, m.blockNumError
 	}
 	return m.blockNumber, nil
+}
+
+func (m *MockEthClient) TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error) {
+	return nil, false, nil
+}
+
+func (m *MockEthClient) FilterLogs(ctx context.Context, query ethereum.FilterQuery) ([]types.Log, error) {
+	return []types.Log{}, nil
+}
+
+func (m *MockEthClient) SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
+	return nil, nil
 }
 
 // TestParseStartEndBlocks is included for completeness, assuming it’s in another file but not here.
