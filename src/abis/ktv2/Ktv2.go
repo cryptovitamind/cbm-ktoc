@@ -1,7 +1,7 @@
 // Code generated - DO NOT EDIT.
 // This file is a generated binding and any manual changes will be lost.
 
-package abis
+package ktv2
 
 import (
 	"errors"
@@ -31,7 +31,7 @@ var (
 
 // Ktv2MetaData contains all meta data concerning the Ktv2 contract.
 var Ktv2MetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_burnDest\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_token\",\"type\":\"address\"},{\"internalType\":\"addresspayable\",\"name\":\"_dest\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_pool\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_ocPrcAddr\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_tp\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"Gave\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"Rwd\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"Staked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"name\":\"Voted\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"Withdrew\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"addOCRwdr\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"allow\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"blockRwd\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"burnDest\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"burnFactor\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"consensusReq\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"decline\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"declines\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"dest\",\"outputs\":[{\"internalType\":\"addresspayable\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"donationPrc\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"epochInterval\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"give\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"maxBrnPrc\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"ocFee\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"ocFees\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"ocRwdrVote\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"ocRwdrs\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"pool\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"removeOCRwdr\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"}],\"name\":\"resetVote\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"addresspayable\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_amt\",\"type\":\"uint256\"}],\"name\":\"rwd\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"amt\",\"type\":\"uint16\"}],\"name\":\"setBurnFactor\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"req\",\"type\":\"uint16\"}],\"name\":\"setConsensusReq\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setDest\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"amt\",\"type\":\"uint16\"}],\"name\":\"setDonationPrc\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"interval\",\"type\":\"uint16\"}],\"name\":\"setEpochInterval\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"amt\",\"type\":\"uint16\"}],\"name\":\"setMaxBurnPrc\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"fee\",\"type\":\"uint16\"}],\"name\":\"setOCFee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_pool\",\"type\":\"address\"}],\"name\":\"setPool\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"amt\",\"type\":\"uint256\"}],\"name\":\"stake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"startBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tlOcFees\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tokenAddr\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalBurned\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalGvn\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalStk\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tp\",\"outputs\":[{\"internalType\":\"contractTPI\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"userStks\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"addresspayable\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"data\",\"type\":\"string\"}],\"name\":\"vote\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"amt\",\"type\":\"uint256\"}],\"name\":\"withdraw\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint32[]\",\"name\":\"blocks\",\"type\":\"uint32[]\"}],\"name\":\"withdrawOCFee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"withdrawTkn\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_burnDest\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_token\",\"type\":\"address\"},{\"internalType\":\"addresspayable\",\"name\":\"_dest\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_pool\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_ocPrcAddr\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_tp\",\"type\":\"address\"},{\"internalType\":\"bool\",\"name\":\"_v2\",\"type\":\"bool\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"Gave\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOC\",\"type\":\"address\"}],\"name\":\"NodeAdded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"oldOC\",\"type\":\"address\"}],\"name\":\"NodeRemoved\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"Rwd\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"Staked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"name\":\"Voted\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"voter\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOC\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"data\",\"type\":\"string\"}],\"name\":\"VotedToAdd\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"voter\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"existingOC\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"data\",\"type\":\"string\"}],\"name\":\"VotedToRemove\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"Withdrew\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"addOCRwdr\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"addVotes\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"allow\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"blockRwd\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"burnDest\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"burnFactor\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"consensusReq\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"decline\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"declines\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"dest\",\"outputs\":[{\"internalType\":\"addresspayable\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"donationPrc\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"epochInterval\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"give\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"hasVoted\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"maxBrnPrc\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"ocFee\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"ocFees\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"ocRwdrVote\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"ocRwdrs\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"pool\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"removeOCRwdr\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"removeVotes\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"}],\"name\":\"resetVote\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOC\",\"type\":\"address\"}],\"name\":\"resetVoteToAdd\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"existingOC\",\"type\":\"address\"}],\"name\":\"resetVoteToRemove\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"addresspayable\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_amt\",\"type\":\"uint256\"}],\"name\":\"rwd\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"amt\",\"type\":\"uint16\"}],\"name\":\"setBurnFactor\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"req\",\"type\":\"uint16\"}],\"name\":\"setConsensusReq\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setDest\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"amt\",\"type\":\"uint16\"}],\"name\":\"setDonationPrc\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"interval\",\"type\":\"uint16\"}],\"name\":\"setEpochInterval\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"amt\",\"type\":\"uint16\"}],\"name\":\"setMaxBurnPrc\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"fee\",\"type\":\"uint16\"}],\"name\":\"setOCFee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_pool\",\"type\":\"address\"}],\"name\":\"setPool\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bool\",\"name\":\"_v2\",\"type\":\"bool\"}],\"name\":\"setV2\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"amt\",\"type\":\"uint256\"}],\"name\":\"stake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"startBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tlOcFees\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tokenAddr\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalBurned\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalGvn\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalOC\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalStk\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tp\",\"outputs\":[{\"internalType\":\"contractTPI\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"userStks\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"v2\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"addresspayable\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"data\",\"type\":\"string\"}],\"name\":\"vote\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOC\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"data\",\"type\":\"string\"}],\"name\":\"voteToAdd\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"existingOC\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"data\",\"type\":\"string\"}],\"name\":\"voteToRemove\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"amt\",\"type\":\"uint256\"}],\"name\":\"withdraw\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint32[]\",\"name\":\"blocks\",\"type\":\"uint32[]\"}],\"name\":\"withdrawOCFee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"withdrawTkn\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}]",
 }
 
 // Ktv2ABI is the input ABI used to generate the binding from.
@@ -178,6 +178,37 @@ func (_Ktv2 *Ktv2TransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transa
 // Transact invokes the (paid) contract method with params as input values.
 func (_Ktv2 *Ktv2TransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _Ktv2.Contract.contract.Transact(opts, method, params...)
+}
+
+// AddVotes is a free data retrieval call binding the contract method 0xc0d4e0e0.
+//
+// Solidity: function addVotes(address ) view returns(uint16)
+func (_Ktv2 *Ktv2Caller) AddVotes(opts *bind.CallOpts, arg0 common.Address) (uint16, error) {
+	var out []interface{}
+	err := _Ktv2.contract.Call(opts, &out, "addVotes", arg0)
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// AddVotes is a free data retrieval call binding the contract method 0xc0d4e0e0.
+//
+// Solidity: function addVotes(address ) view returns(uint16)
+func (_Ktv2 *Ktv2Session) AddVotes(arg0 common.Address) (uint16, error) {
+	return _Ktv2.Contract.AddVotes(&_Ktv2.CallOpts, arg0)
+}
+
+// AddVotes is a free data retrieval call binding the contract method 0xc0d4e0e0.
+//
+// Solidity: function addVotes(address ) view returns(uint16)
+func (_Ktv2 *Ktv2CallerSession) AddVotes(arg0 common.Address) (uint16, error) {
+	return _Ktv2.Contract.AddVotes(&_Ktv2.CallOpts, arg0)
 }
 
 // BlockRwd is a free data retrieval call binding the contract method 0xca1d1b87.
@@ -428,6 +459,37 @@ func (_Ktv2 *Ktv2CallerSession) EpochInterval() (uint16, error) {
 	return _Ktv2.Contract.EpochInterval(&_Ktv2.CallOpts)
 }
 
+// HasVoted is a free data retrieval call binding the contract method 0x4d4d2b1c.
+//
+// Solidity: function hasVoted(address , address ) view returns(bool)
+func (_Ktv2 *Ktv2Caller) HasVoted(opts *bind.CallOpts, arg0 common.Address, arg1 common.Address) (bool, error) {
+	var out []interface{}
+	err := _Ktv2.contract.Call(opts, &out, "hasVoted", arg0, arg1)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// HasVoted is a free data retrieval call binding the contract method 0x4d4d2b1c.
+//
+// Solidity: function hasVoted(address , address ) view returns(bool)
+func (_Ktv2 *Ktv2Session) HasVoted(arg0 common.Address, arg1 common.Address) (bool, error) {
+	return _Ktv2.Contract.HasVoted(&_Ktv2.CallOpts, arg0, arg1)
+}
+
+// HasVoted is a free data retrieval call binding the contract method 0x4d4d2b1c.
+//
+// Solidity: function hasVoted(address , address ) view returns(bool)
+func (_Ktv2 *Ktv2CallerSession) HasVoted(arg0 common.Address, arg1 common.Address) (bool, error) {
+	return _Ktv2.Contract.HasVoted(&_Ktv2.CallOpts, arg0, arg1)
+}
+
 // MaxBrnPrc is a free data retrieval call binding the contract method 0x1a9f16bb.
 //
 // Solidity: function maxBrnPrc() view returns(uint16)
@@ -645,6 +707,37 @@ func (_Ktv2 *Ktv2CallerSession) Pool() (common.Address, error) {
 	return _Ktv2.Contract.Pool(&_Ktv2.CallOpts)
 }
 
+// RemoveVotes is a free data retrieval call binding the contract method 0xa2ca6dce.
+//
+// Solidity: function removeVotes(address ) view returns(uint16)
+func (_Ktv2 *Ktv2Caller) RemoveVotes(opts *bind.CallOpts, arg0 common.Address) (uint16, error) {
+	var out []interface{}
+	err := _Ktv2.contract.Call(opts, &out, "removeVotes", arg0)
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// RemoveVotes is a free data retrieval call binding the contract method 0xa2ca6dce.
+//
+// Solidity: function removeVotes(address ) view returns(uint16)
+func (_Ktv2 *Ktv2Session) RemoveVotes(arg0 common.Address) (uint16, error) {
+	return _Ktv2.Contract.RemoveVotes(&_Ktv2.CallOpts, arg0)
+}
+
+// RemoveVotes is a free data retrieval call binding the contract method 0xa2ca6dce.
+//
+// Solidity: function removeVotes(address ) view returns(uint16)
+func (_Ktv2 *Ktv2CallerSession) RemoveVotes(arg0 common.Address) (uint16, error) {
+	return _Ktv2.Contract.RemoveVotes(&_Ktv2.CallOpts, arg0)
+}
+
 // StartBlock is a free data retrieval call binding the contract method 0x48cd4cb1.
 //
 // Solidity: function startBlock() view returns(uint256)
@@ -800,6 +893,37 @@ func (_Ktv2 *Ktv2CallerSession) TotalGvn() (*big.Int, error) {
 	return _Ktv2.Contract.TotalGvn(&_Ktv2.CallOpts)
 }
 
+// TotalOC is a free data retrieval call binding the contract method 0x03c424c7.
+//
+// Solidity: function totalOC() view returns(uint16)
+func (_Ktv2 *Ktv2Caller) TotalOC(opts *bind.CallOpts) (uint16, error) {
+	var out []interface{}
+	err := _Ktv2.contract.Call(opts, &out, "totalOC")
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// TotalOC is a free data retrieval call binding the contract method 0x03c424c7.
+//
+// Solidity: function totalOC() view returns(uint16)
+func (_Ktv2 *Ktv2Session) TotalOC() (uint16, error) {
+	return _Ktv2.Contract.TotalOC(&_Ktv2.CallOpts)
+}
+
+// TotalOC is a free data retrieval call binding the contract method 0x03c424c7.
+//
+// Solidity: function totalOC() view returns(uint16)
+func (_Ktv2 *Ktv2CallerSession) TotalOC() (uint16, error) {
+	return _Ktv2.Contract.TotalOC(&_Ktv2.CallOpts)
+}
+
 // TotalStk is a free data retrieval call binding the contract method 0x081a7ad3.
 //
 // Solidity: function totalStk() view returns(uint256)
@@ -891,6 +1015,37 @@ func (_Ktv2 *Ktv2Session) UserStks(arg0 common.Address) (*big.Int, error) {
 // Solidity: function userStks(address ) view returns(uint256)
 func (_Ktv2 *Ktv2CallerSession) UserStks(arg0 common.Address) (*big.Int, error) {
 	return _Ktv2.Contract.UserStks(&_Ktv2.CallOpts, arg0)
+}
+
+// V2 is a free data retrieval call binding the contract method 0xf3acae3a.
+//
+// Solidity: function v2() view returns(bool)
+func (_Ktv2 *Ktv2Caller) V2(opts *bind.CallOpts) (bool, error) {
+	var out []interface{}
+	err := _Ktv2.contract.Call(opts, &out, "v2")
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// V2 is a free data retrieval call binding the contract method 0xf3acae3a.
+//
+// Solidity: function v2() view returns(bool)
+func (_Ktv2 *Ktv2Session) V2() (bool, error) {
+	return _Ktv2.Contract.V2(&_Ktv2.CallOpts)
+}
+
+// V2 is a free data retrieval call binding the contract method 0xf3acae3a.
+//
+// Solidity: function v2() view returns(bool)
+func (_Ktv2 *Ktv2CallerSession) V2() (bool, error) {
+	return _Ktv2.Contract.V2(&_Ktv2.CallOpts)
 }
 
 // AddOCRwdr is a paid mutator transaction binding the contract method 0xd138321e.
@@ -1038,6 +1193,48 @@ func (_Ktv2 *Ktv2Session) ResetVote(_to common.Address) (*types.Transaction, err
 // Solidity: function resetVote(address _to) returns()
 func (_Ktv2 *Ktv2TransactorSession) ResetVote(_to common.Address) (*types.Transaction, error) {
 	return _Ktv2.Contract.ResetVote(&_Ktv2.TransactOpts, _to)
+}
+
+// ResetVoteToAdd is a paid mutator transaction binding the contract method 0xb53da9d9.
+//
+// Solidity: function resetVoteToAdd(address newOC) returns()
+func (_Ktv2 *Ktv2Transactor) ResetVoteToAdd(opts *bind.TransactOpts, newOC common.Address) (*types.Transaction, error) {
+	return _Ktv2.contract.Transact(opts, "resetVoteToAdd", newOC)
+}
+
+// ResetVoteToAdd is a paid mutator transaction binding the contract method 0xb53da9d9.
+//
+// Solidity: function resetVoteToAdd(address newOC) returns()
+func (_Ktv2 *Ktv2Session) ResetVoteToAdd(newOC common.Address) (*types.Transaction, error) {
+	return _Ktv2.Contract.ResetVoteToAdd(&_Ktv2.TransactOpts, newOC)
+}
+
+// ResetVoteToAdd is a paid mutator transaction binding the contract method 0xb53da9d9.
+//
+// Solidity: function resetVoteToAdd(address newOC) returns()
+func (_Ktv2 *Ktv2TransactorSession) ResetVoteToAdd(newOC common.Address) (*types.Transaction, error) {
+	return _Ktv2.Contract.ResetVoteToAdd(&_Ktv2.TransactOpts, newOC)
+}
+
+// ResetVoteToRemove is a paid mutator transaction binding the contract method 0xdfa00b1c.
+//
+// Solidity: function resetVoteToRemove(address existingOC) returns()
+func (_Ktv2 *Ktv2Transactor) ResetVoteToRemove(opts *bind.TransactOpts, existingOC common.Address) (*types.Transaction, error) {
+	return _Ktv2.contract.Transact(opts, "resetVoteToRemove", existingOC)
+}
+
+// ResetVoteToRemove is a paid mutator transaction binding the contract method 0xdfa00b1c.
+//
+// Solidity: function resetVoteToRemove(address existingOC) returns()
+func (_Ktv2 *Ktv2Session) ResetVoteToRemove(existingOC common.Address) (*types.Transaction, error) {
+	return _Ktv2.Contract.ResetVoteToRemove(&_Ktv2.TransactOpts, existingOC)
+}
+
+// ResetVoteToRemove is a paid mutator transaction binding the contract method 0xdfa00b1c.
+//
+// Solidity: function resetVoteToRemove(address existingOC) returns()
+func (_Ktv2 *Ktv2TransactorSession) ResetVoteToRemove(existingOC common.Address) (*types.Transaction, error) {
+	return _Ktv2.Contract.ResetVoteToRemove(&_Ktv2.TransactOpts, existingOC)
 }
 
 // Rwd is a paid mutator transaction binding the contract method 0x30606eaf.
@@ -1229,6 +1426,27 @@ func (_Ktv2 *Ktv2TransactorSession) SetPool(_pool common.Address) (*types.Transa
 	return _Ktv2.Contract.SetPool(&_Ktv2.TransactOpts, _pool)
 }
 
+// SetV2 is a paid mutator transaction binding the contract method 0x30e3cb68.
+//
+// Solidity: function setV2(bool _v2) returns()
+func (_Ktv2 *Ktv2Transactor) SetV2(opts *bind.TransactOpts, _v2 bool) (*types.Transaction, error) {
+	return _Ktv2.contract.Transact(opts, "setV2", _v2)
+}
+
+// SetV2 is a paid mutator transaction binding the contract method 0x30e3cb68.
+//
+// Solidity: function setV2(bool _v2) returns()
+func (_Ktv2 *Ktv2Session) SetV2(_v2 bool) (*types.Transaction, error) {
+	return _Ktv2.Contract.SetV2(&_Ktv2.TransactOpts, _v2)
+}
+
+// SetV2 is a paid mutator transaction binding the contract method 0x30e3cb68.
+//
+// Solidity: function setV2(bool _v2) returns()
+func (_Ktv2 *Ktv2TransactorSession) SetV2(_v2 bool) (*types.Transaction, error) {
+	return _Ktv2.Contract.SetV2(&_Ktv2.TransactOpts, _v2)
+}
+
 // Stake is a paid mutator transaction binding the contract method 0xa694fc3a.
 //
 // Solidity: function stake(uint256 amt) returns()
@@ -1290,6 +1508,48 @@ func (_Ktv2 *Ktv2Session) Vote(_to common.Address, data string) (*types.Transact
 // Solidity: function vote(address _to, string data) returns()
 func (_Ktv2 *Ktv2TransactorSession) Vote(_to common.Address, data string) (*types.Transaction, error) {
 	return _Ktv2.Contract.Vote(&_Ktv2.TransactOpts, _to, data)
+}
+
+// VoteToAdd is a paid mutator transaction binding the contract method 0x7b0443fa.
+//
+// Solidity: function voteToAdd(address newOC, string data) returns()
+func (_Ktv2 *Ktv2Transactor) VoteToAdd(opts *bind.TransactOpts, newOC common.Address, data string) (*types.Transaction, error) {
+	return _Ktv2.contract.Transact(opts, "voteToAdd", newOC, data)
+}
+
+// VoteToAdd is a paid mutator transaction binding the contract method 0x7b0443fa.
+//
+// Solidity: function voteToAdd(address newOC, string data) returns()
+func (_Ktv2 *Ktv2Session) VoteToAdd(newOC common.Address, data string) (*types.Transaction, error) {
+	return _Ktv2.Contract.VoteToAdd(&_Ktv2.TransactOpts, newOC, data)
+}
+
+// VoteToAdd is a paid mutator transaction binding the contract method 0x7b0443fa.
+//
+// Solidity: function voteToAdd(address newOC, string data) returns()
+func (_Ktv2 *Ktv2TransactorSession) VoteToAdd(newOC common.Address, data string) (*types.Transaction, error) {
+	return _Ktv2.Contract.VoteToAdd(&_Ktv2.TransactOpts, newOC, data)
+}
+
+// VoteToRemove is a paid mutator transaction binding the contract method 0xca1d9cc2.
+//
+// Solidity: function voteToRemove(address existingOC, string data) returns()
+func (_Ktv2 *Ktv2Transactor) VoteToRemove(opts *bind.TransactOpts, existingOC common.Address, data string) (*types.Transaction, error) {
+	return _Ktv2.contract.Transact(opts, "voteToRemove", existingOC, data)
+}
+
+// VoteToRemove is a paid mutator transaction binding the contract method 0xca1d9cc2.
+//
+// Solidity: function voteToRemove(address existingOC, string data) returns()
+func (_Ktv2 *Ktv2Session) VoteToRemove(existingOC common.Address, data string) (*types.Transaction, error) {
+	return _Ktv2.Contract.VoteToRemove(&_Ktv2.TransactOpts, existingOC, data)
+}
+
+// VoteToRemove is a paid mutator transaction binding the contract method 0xca1d9cc2.
+//
+// Solidity: function voteToRemove(address existingOC, string data) returns()
+func (_Ktv2 *Ktv2TransactorSession) VoteToRemove(existingOC common.Address, data string) (*types.Transaction, error) {
+	return _Ktv2.Contract.VoteToRemove(&_Ktv2.TransactOpts, existingOC, data)
 }
 
 // Withdraw is a paid mutator transaction binding the contract method 0x2e1a7d4d.
@@ -1505,6 +1765,294 @@ func (_Ktv2 *Ktv2Filterer) WatchGave(opts *bind.WatchOpts, sink chan<- *Ktv2Gave
 func (_Ktv2 *Ktv2Filterer) ParseGave(log types.Log) (*Ktv2Gave, error) {
 	event := new(Ktv2Gave)
 	if err := _Ktv2.contract.UnpackLog(event, "Gave", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// Ktv2NodeAddedIterator is returned from FilterNodeAdded and is used to iterate over the raw logs and unpacked data for NodeAdded events raised by the Ktv2 contract.
+type Ktv2NodeAddedIterator struct {
+	Event *Ktv2NodeAdded // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *Ktv2NodeAddedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(Ktv2NodeAdded)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(Ktv2NodeAdded)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *Ktv2NodeAddedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *Ktv2NodeAddedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// Ktv2NodeAdded represents a NodeAdded event raised by the Ktv2 contract.
+type Ktv2NodeAdded struct {
+	NewOC common.Address
+	Raw   types.Log // Blockchain specific contextual infos
+}
+
+// FilterNodeAdded is a free log retrieval operation binding the contract event 0xb25d03aaf308d7291709be1ea28b800463cf3a9a4c4a5555d7333a964c1dfebd.
+//
+// Solidity: event NodeAdded(address indexed newOC)
+func (_Ktv2 *Ktv2Filterer) FilterNodeAdded(opts *bind.FilterOpts, newOC []common.Address) (*Ktv2NodeAddedIterator, error) {
+
+	var newOCRule []interface{}
+	for _, newOCItem := range newOC {
+		newOCRule = append(newOCRule, newOCItem)
+	}
+
+	logs, sub, err := _Ktv2.contract.FilterLogs(opts, "NodeAdded", newOCRule)
+	if err != nil {
+		return nil, err
+	}
+	return &Ktv2NodeAddedIterator{contract: _Ktv2.contract, event: "NodeAdded", logs: logs, sub: sub}, nil
+}
+
+// WatchNodeAdded is a free log subscription operation binding the contract event 0xb25d03aaf308d7291709be1ea28b800463cf3a9a4c4a5555d7333a964c1dfebd.
+//
+// Solidity: event NodeAdded(address indexed newOC)
+func (_Ktv2 *Ktv2Filterer) WatchNodeAdded(opts *bind.WatchOpts, sink chan<- *Ktv2NodeAdded, newOC []common.Address) (event.Subscription, error) {
+
+	var newOCRule []interface{}
+	for _, newOCItem := range newOC {
+		newOCRule = append(newOCRule, newOCItem)
+	}
+
+	logs, sub, err := _Ktv2.contract.WatchLogs(opts, "NodeAdded", newOCRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(Ktv2NodeAdded)
+				if err := _Ktv2.contract.UnpackLog(event, "NodeAdded", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseNodeAdded is a log parse operation binding the contract event 0xb25d03aaf308d7291709be1ea28b800463cf3a9a4c4a5555d7333a964c1dfebd.
+//
+// Solidity: event NodeAdded(address indexed newOC)
+func (_Ktv2 *Ktv2Filterer) ParseNodeAdded(log types.Log) (*Ktv2NodeAdded, error) {
+	event := new(Ktv2NodeAdded)
+	if err := _Ktv2.contract.UnpackLog(event, "NodeAdded", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// Ktv2NodeRemovedIterator is returned from FilterNodeRemoved and is used to iterate over the raw logs and unpacked data for NodeRemoved events raised by the Ktv2 contract.
+type Ktv2NodeRemovedIterator struct {
+	Event *Ktv2NodeRemoved // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *Ktv2NodeRemovedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(Ktv2NodeRemoved)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(Ktv2NodeRemoved)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *Ktv2NodeRemovedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *Ktv2NodeRemovedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// Ktv2NodeRemoved represents a NodeRemoved event raised by the Ktv2 contract.
+type Ktv2NodeRemoved struct {
+	OldOC common.Address
+	Raw   types.Log // Blockchain specific contextual infos
+}
+
+// FilterNodeRemoved is a free log retrieval operation binding the contract event 0xcfc24166db4bb677e857cacabd1541fb2b30645021b27c5130419589b84db52b.
+//
+// Solidity: event NodeRemoved(address indexed oldOC)
+func (_Ktv2 *Ktv2Filterer) FilterNodeRemoved(opts *bind.FilterOpts, oldOC []common.Address) (*Ktv2NodeRemovedIterator, error) {
+
+	var oldOCRule []interface{}
+	for _, oldOCItem := range oldOC {
+		oldOCRule = append(oldOCRule, oldOCItem)
+	}
+
+	logs, sub, err := _Ktv2.contract.FilterLogs(opts, "NodeRemoved", oldOCRule)
+	if err != nil {
+		return nil, err
+	}
+	return &Ktv2NodeRemovedIterator{contract: _Ktv2.contract, event: "NodeRemoved", logs: logs, sub: sub}, nil
+}
+
+// WatchNodeRemoved is a free log subscription operation binding the contract event 0xcfc24166db4bb677e857cacabd1541fb2b30645021b27c5130419589b84db52b.
+//
+// Solidity: event NodeRemoved(address indexed oldOC)
+func (_Ktv2 *Ktv2Filterer) WatchNodeRemoved(opts *bind.WatchOpts, sink chan<- *Ktv2NodeRemoved, oldOC []common.Address) (event.Subscription, error) {
+
+	var oldOCRule []interface{}
+	for _, oldOCItem := range oldOC {
+		oldOCRule = append(oldOCRule, oldOCItem)
+	}
+
+	logs, sub, err := _Ktv2.contract.WatchLogs(opts, "NodeRemoved", oldOCRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(Ktv2NodeRemoved)
+				if err := _Ktv2.contract.UnpackLog(event, "NodeRemoved", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseNodeRemoved is a log parse operation binding the contract event 0xcfc24166db4bb677e857cacabd1541fb2b30645021b27c5130419589b84db52b.
+//
+// Solidity: event NodeRemoved(address indexed oldOC)
+func (_Ktv2 *Ktv2Filterer) ParseNodeRemoved(log types.Log) (*Ktv2NodeRemoved, error) {
+	event := new(Ktv2NodeRemoved)
+	if err := _Ktv2.contract.UnpackLog(event, "NodeRemoved", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log
@@ -1873,7 +2421,7 @@ type Ktv2Staked struct {
 	Raw  types.Log // Blockchain specific contextual infos
 }
 
-// FilterStaked is a free log retrieval operation binding the contract event
+// FilterStaked is a free log retrieval operation binding the contract event 0x9e71bc8eea02a63969f509818f2dafb9254532904319f9dbda79b67bd34a5f3d.
 //
 // Solidity: event Staked(address arg0, uint256 arg1)
 func (_Ktv2 *Ktv2Filterer) FilterStaked(opts *bind.FilterOpts) (*Ktv2StakedIterator, error) {
@@ -1885,7 +2433,7 @@ func (_Ktv2 *Ktv2Filterer) FilterStaked(opts *bind.FilterOpts) (*Ktv2StakedItera
 	return &Ktv2StakedIterator{contract: _Ktv2.contract, event: "Staked", logs: logs, sub: sub}, nil
 }
 
-// WatchStaked is a free log subscription operation binding the contract event
+// WatchStaked is a free log subscription operation binding the contract event 0x9e71bc8eea02a63969f509818f2dafb9254532904319f9dbda79b67bd34a5f3d.
 //
 // Solidity: event Staked(address arg0, uint256 arg1)
 func (_Ktv2 *Ktv2Filterer) WatchStaked(opts *bind.WatchOpts, sink chan<- *Ktv2Staked) (event.Subscription, error) {
@@ -2064,6 +2612,314 @@ func (_Ktv2 *Ktv2Filterer) WatchVoted(opts *bind.WatchOpts, sink chan<- *Ktv2Vot
 func (_Ktv2 *Ktv2Filterer) ParseVoted(log types.Log) (*Ktv2Voted, error) {
 	event := new(Ktv2Voted)
 	if err := _Ktv2.contract.UnpackLog(event, "Voted", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// Ktv2VotedToAddIterator is returned from FilterVotedToAdd and is used to iterate over the raw logs and unpacked data for VotedToAdd events raised by the Ktv2 contract.
+type Ktv2VotedToAddIterator struct {
+	Event *Ktv2VotedToAdd // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *Ktv2VotedToAddIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(Ktv2VotedToAdd)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(Ktv2VotedToAdd)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *Ktv2VotedToAddIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *Ktv2VotedToAddIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// Ktv2VotedToAdd represents a VotedToAdd event raised by the Ktv2 contract.
+type Ktv2VotedToAdd struct {
+	Voter common.Address
+	NewOC common.Address
+	Data  string
+	Raw   types.Log // Blockchain specific contextual infos
+}
+
+// FilterVotedToAdd is a free log retrieval operation binding the contract event 0x6f16cedcfba9076088f50cb98393296e065155864bc7f3c923530550e35fd455.
+//
+// Solidity: event VotedToAdd(address indexed voter, address indexed newOC, string data)
+func (_Ktv2 *Ktv2Filterer) FilterVotedToAdd(opts *bind.FilterOpts, voter []common.Address, newOC []common.Address) (*Ktv2VotedToAddIterator, error) {
+
+	var voterRule []interface{}
+	for _, voterItem := range voter {
+		voterRule = append(voterRule, voterItem)
+	}
+	var newOCRule []interface{}
+	for _, newOCItem := range newOC {
+		newOCRule = append(newOCRule, newOCItem)
+	}
+
+	logs, sub, err := _Ktv2.contract.FilterLogs(opts, "VotedToAdd", voterRule, newOCRule)
+	if err != nil {
+		return nil, err
+	}
+	return &Ktv2VotedToAddIterator{contract: _Ktv2.contract, event: "VotedToAdd", logs: logs, sub: sub}, nil
+}
+
+// WatchVotedToAdd is a free log subscription operation binding the contract event 0x6f16cedcfba9076088f50cb98393296e065155864bc7f3c923530550e35fd455.
+//
+// Solidity: event VotedToAdd(address indexed voter, address indexed newOC, string data)
+func (_Ktv2 *Ktv2Filterer) WatchVotedToAdd(opts *bind.WatchOpts, sink chan<- *Ktv2VotedToAdd, voter []common.Address, newOC []common.Address) (event.Subscription, error) {
+
+	var voterRule []interface{}
+	for _, voterItem := range voter {
+		voterRule = append(voterRule, voterItem)
+	}
+	var newOCRule []interface{}
+	for _, newOCItem := range newOC {
+		newOCRule = append(newOCRule, newOCItem)
+	}
+
+	logs, sub, err := _Ktv2.contract.WatchLogs(opts, "VotedToAdd", voterRule, newOCRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(Ktv2VotedToAdd)
+				if err := _Ktv2.contract.UnpackLog(event, "VotedToAdd", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseVotedToAdd is a log parse operation binding the contract event 0x6f16cedcfba9076088f50cb98393296e065155864bc7f3c923530550e35fd455.
+//
+// Solidity: event VotedToAdd(address indexed voter, address indexed newOC, string data)
+func (_Ktv2 *Ktv2Filterer) ParseVotedToAdd(log types.Log) (*Ktv2VotedToAdd, error) {
+	event := new(Ktv2VotedToAdd)
+	if err := _Ktv2.contract.UnpackLog(event, "VotedToAdd", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// Ktv2VotedToRemoveIterator is returned from FilterVotedToRemove and is used to iterate over the raw logs and unpacked data for VotedToRemove events raised by the Ktv2 contract.
+type Ktv2VotedToRemoveIterator struct {
+	Event *Ktv2VotedToRemove // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *Ktv2VotedToRemoveIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(Ktv2VotedToRemove)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(Ktv2VotedToRemove)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *Ktv2VotedToRemoveIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *Ktv2VotedToRemoveIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// Ktv2VotedToRemove represents a VotedToRemove event raised by the Ktv2 contract.
+type Ktv2VotedToRemove struct {
+	Voter      common.Address
+	ExistingOC common.Address
+	Data       string
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterVotedToRemove is a free log retrieval operation binding the contract event 0x326236c4b24ce4385364a6e9ea51a988889c12b6ac3cea126fd823a9c822994f.
+//
+// Solidity: event VotedToRemove(address indexed voter, address indexed existingOC, string data)
+func (_Ktv2 *Ktv2Filterer) FilterVotedToRemove(opts *bind.FilterOpts, voter []common.Address, existingOC []common.Address) (*Ktv2VotedToRemoveIterator, error) {
+
+	var voterRule []interface{}
+	for _, voterItem := range voter {
+		voterRule = append(voterRule, voterItem)
+	}
+	var existingOCRule []interface{}
+	for _, existingOCItem := range existingOC {
+		existingOCRule = append(existingOCRule, existingOCItem)
+	}
+
+	logs, sub, err := _Ktv2.contract.FilterLogs(opts, "VotedToRemove", voterRule, existingOCRule)
+	if err != nil {
+		return nil, err
+	}
+	return &Ktv2VotedToRemoveIterator{contract: _Ktv2.contract, event: "VotedToRemove", logs: logs, sub: sub}, nil
+}
+
+// WatchVotedToRemove is a free log subscription operation binding the contract event 0x326236c4b24ce4385364a6e9ea51a988889c12b6ac3cea126fd823a9c822994f.
+//
+// Solidity: event VotedToRemove(address indexed voter, address indexed existingOC, string data)
+func (_Ktv2 *Ktv2Filterer) WatchVotedToRemove(opts *bind.WatchOpts, sink chan<- *Ktv2VotedToRemove, voter []common.Address, existingOC []common.Address) (event.Subscription, error) {
+
+	var voterRule []interface{}
+	for _, voterItem := range voter {
+		voterRule = append(voterRule, voterItem)
+	}
+	var existingOCRule []interface{}
+	for _, existingOCItem := range existingOC {
+		existingOCRule = append(existingOCRule, existingOCItem)
+	}
+
+	logs, sub, err := _Ktv2.contract.WatchLogs(opts, "VotedToRemove", voterRule, existingOCRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(Ktv2VotedToRemove)
+				if err := _Ktv2.contract.UnpackLog(event, "VotedToRemove", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseVotedToRemove is a log parse operation binding the contract event 0x326236c4b24ce4385364a6e9ea51a988889c12b6ac3cea126fd823a9c822994f.
+//
+// Solidity: event VotedToRemove(address indexed voter, address indexed existingOC, string data)
+func (_Ktv2 *Ktv2Filterer) ParseVotedToRemove(log types.Log) (*Ktv2VotedToRemove, error) {
+	event := new(Ktv2VotedToRemove)
+	if err := _Ktv2.contract.UnpackLog(event, "VotedToRemove", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log

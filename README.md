@@ -2,14 +2,9 @@
 
 This app interacts with an Ethereum KT contract to facilitate a decentralized staking and voting system. It allows nodes to vote and reward users who staked tokens over defined epochs, tracked via block ranges, and calculates minimum stakes to determine eligibility. KTOC connects to an Ethereum node and performs admin operations, voting, and rewarding through ABI bindings. At the epoch’s end, it gathers stakes, assigns probabilities based on minimum contributions, and selects a winner probabilistically using a future block hash as a random seed. The system then votes for the winner and, if enough votes meet the consensus threshold, rewards them with the contract’s ETH balance.
 
-# Getting Started...
-
-## Building 
-
-Run build.ps1 (windows) or build.sh (on unix). 
-An executable ktoc.exe should be created.
-
 Create a .env file with keys like MY_PUBLIC_KEY and KT_ADDR. 
+
+Potential use cases include a staking-based lottery, governance simulation, or educational tool for Ethereum development. Overall, it’s a robust utility showcasing smart contract interactions, event filtering, and probabilistic algorithms in a user-friendly package.
 
 ## Local .env file
 
@@ -23,6 +18,7 @@ POOL_ADDR=
 TKN_ADDR=
 TKN_PRC_ADDR=
 KT_ADDR=
+QUERY_DELAY=
 ETH_ENDPOINT=http://127.0.0.1:8545
 KT_START_BLOCK=<Creation block of KT_ADDR - Use -ktBlock to determine block number>
 ```

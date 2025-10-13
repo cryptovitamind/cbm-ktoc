@@ -71,29 +71,30 @@ try {
 
     # Build executable
     Write-Log -Message "Building executable..."
-    $buildOutput = & go build -o $Executable | Out-String
-    $buildExitCode = $LASTEXITCODE
-    Write-Log -Message "Done building."
-    if ($buildExitCode -ne 0) { 
-        Handle-Error "Build failed with exit code $buildExitCode. Error: $buildOutput"
-    }
-    if ($buildOutput.Trim()) { 
-        Write-Log -Message "Build output:`n$buildOutput" 
-    } else { 
-        Write-Log -Message "Build completed with no additional output" 
-    }
-    
+    Get-Location
+    $output = & go build -o $Executable 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { Handle-Error "Build failed: $output" }
+    if ($output.Trim()) { Write-Log -Message $output.Trim() } else { Write-Log -Message "Build completed with no additional output" }
+
     # Run tests
     Write-Log -Message "Running tests..."
     Set-Location (Split-Path $SrcDir -Parent)
-    $output = & go test ./... -v -cover -coverprofile=coverage.out 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) { Handle-Error "Tests failed: $output" }
-    if ($output.Trim()) { Write-Log -Message $output.Trim() }
+    $originalErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $testOutput = & go test ./... -v -cover -coverprofile=coverage.out 2>&1
+    $ErrorActionPreference = $originalErrorAction
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log -Error -Message "Tests failed. Full output:"
+        $testOutput | ForEach-Object { Write-Log -Error -Message $_ }
+        Set-Location $ScriptRoot
+        exit 1
+    }
+    $testOutput | ForEach-Object { Write-Log -Message $_ }
 
     # Write-Log -Message "Coverage..."
     # $output = & go tool cover -func=coverage.out 2>&1 | Out-String
     # Write-Log -Message "Writing logs... "
-    if ($output.Trim()) { Write-Log -Message $output.Trim() }
+    # if ($output.Trim()) { Write-Log -Message $output.Trim() }
 
     Write-Log -Message "Return home..."
     Set-Location $ScriptRoot

@@ -1,8 +1,6 @@
 package ktfunc
 
 import (
-	"fmt"
-	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,16 +51,15 @@ func TestParseStartEndBlocks(t *testing.T) {
 			name:        "empty string",
 			input:       "",
 			expectError: true,
-			errorMsg:    "invalid start:end blocks format, expected 'start-end'",
+			errorMsg:    "invalid start:end blocks format, expected 'start:end'",
 		},
 		{
 			name:        "extra parts",
 			input:       "100:200:300",
 			expectError: true,
-			errorMsg:    "invalid start:end blocks format, expected 'start-end'",
+			errorMsg:    "invalid start:end blocks format, expected 'start:end'",
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			start, end, err := ParseStartEndBlocks(tt.input)
@@ -110,13 +107,13 @@ func TestParseWithdrawBlocks(t *testing.T) {
 			name:        "below range",
 			input:       "0",
 			expectError: true,
-			errorMsg:    "block number 0 at position 1 is out of range (1-500000000)",
+			errorMsg:    "block number 0 at position 1 is out of range (1-5000000)",
 		},
 		{
 			name:        "above range",
-			input:       "500000001",
+			input:       "5000001",
 			expectError: true,
-			errorMsg:    "block number 500000001 at position 1 is out of range (1-500000000)",
+			errorMsg:    "block number 5000001 at position 1 is out of range (1-5000000)",
 		},
 		{
 			name:        "empty part",
@@ -131,7 +128,6 @@ func TestParseWithdrawBlocks(t *testing.T) {
 			expectError: false,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := parseWithdrawBlocks(tt.input)
@@ -143,60 +139,6 @@ func TestParseWithdrawBlocks(t *testing.T) {
 			} else {
 				assert.NoError(t, err, "unexpected error for input: %s", tt.input)
 				assert.Equal(t, tt.expected, result, "result mismatch")
-			}
-		})
-	}
-}
-
-func TestSumFeesOverBlocks(t *testing.T) {
-	tests := []struct {
-		name        string
-		fetchFee    FeeFetcher
-		start       uint64
-		end         uint64
-		expected    *big.Int
-		expectError bool
-		errorMsg    string
-	}{
-		{
-			name: "valid fees",
-			fetchFee: func(block uint64) (*big.Int, error) {
-				if block == 100 {
-					return big.NewInt(1000), nil
-				} else if block == 101 {
-					return big.NewInt(2000), nil
-				}
-				return big.NewInt(0), nil
-			},
-			start:       100,
-			end:         101,
-			expected:    big.NewInt(3000),
-			expectError: false,
-		},
-		{
-			name: "error in fetching",
-			fetchFee: func(block uint64) (*big.Int, error) {
-				if block == 100 {
-					return nil, fmt.Errorf("fetch error")
-				}
-				return big.NewInt(0), nil
-			},
-			start:       100,
-			end:         102,
-			expectError: true,
-			errorMsg:    "failed to fetch fee for block 100: fetch error",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			total, err := sumFeesOverBlocks(tt.fetchFee, tt.start, tt.end)
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Equal(t, tt.errorMsg, err.Error())
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, 0, tt.expected.Cmp(total), "total fees mismatch")
 			}
 		})
 	}

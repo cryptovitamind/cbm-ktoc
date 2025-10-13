@@ -1,7 +1,7 @@
 // Code generated - DO NOT EDIT.
 // This file is a generated binding and any manual changes will be lost.
 
-package abis
+package ktv2fact
 
 import (
 	"errors"
@@ -31,7 +31,7 @@ var (
 
 // Ktv2factMetaData contains all meta data concerning the Ktv2fact contract.
 var Ktv2factMetaData = &bind.MetaData{
-	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"created\",\"type\":\"address\"}],\"name\":\"Created\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"count\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_burnDest\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_token\",\"type\":\"address\"},{\"internalType\":\"addresspayable\",\"name\":\"_dest\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_pool\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_ocPrcAddr\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_tp\",\"type\":\"address\"}],\"name\":\"create\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"created\",\"outputs\":[{\"internalType\":\"contractKtv2\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"created\",\"type\":\"address\"}],\"name\":\"Created\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"count\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_burnDest\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_token\",\"type\":\"address\"},{\"internalType\":\"addresspayable\",\"name\":\"_dest\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_pool\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_ocPrcAddr\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_tp\",\"type\":\"address\"},{\"internalType\":\"bool\",\"name\":\"v2\",\"type\":\"bool\"}],\"name\":\"create\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"created\",\"outputs\":[{\"internalType\":\"contractKtv2\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
 // Ktv2factABI is the input ABI used to generate the binding from.
@@ -242,25 +242,25 @@ func (_Ktv2fact *Ktv2factCallerSession) Created(arg0 *big.Int) (common.Address, 
 	return _Ktv2fact.Contract.Created(&_Ktv2fact.CallOpts, arg0)
 }
 
-// Create is a paid mutator transaction binding the contract method 0x43f70917.
+// Create is a paid mutator transaction binding the contract method 0xaf1b39b3.
 //
-// Solidity: function create(address _burnDest, address _token, address _dest, address _pool, address _ocPrcAddr, address _tp) returns()
-func (_Ktv2fact *Ktv2factTransactor) Create(opts *bind.TransactOpts, _burnDest common.Address, _token common.Address, _dest common.Address, _pool common.Address, _ocPrcAddr common.Address, _tp common.Address) (*types.Transaction, error) {
-	return _Ktv2fact.contract.Transact(opts, "create", _burnDest, _token, _dest, _pool, _ocPrcAddr, _tp)
+// Solidity: function create(address _burnDest, address _token, address _dest, address _pool, address _ocPrcAddr, address _tp, bool v2) returns()
+func (_Ktv2fact *Ktv2factTransactor) Create(opts *bind.TransactOpts, _burnDest common.Address, _token common.Address, _dest common.Address, _pool common.Address, _ocPrcAddr common.Address, _tp common.Address, v2 bool) (*types.Transaction, error) {
+	return _Ktv2fact.contract.Transact(opts, "create", _burnDest, _token, _dest, _pool, _ocPrcAddr, _tp, v2)
 }
 
-// Create is a paid mutator transaction binding the contract method 0x43f70917.
+// Create is a paid mutator transaction binding the contract method 0xaf1b39b3.
 //
-// Solidity: function create(address _burnDest, address _token, address _dest, address _pool, address _ocPrcAddr, address _tp) returns()
-func (_Ktv2fact *Ktv2factSession) Create(_burnDest common.Address, _token common.Address, _dest common.Address, _pool common.Address, _ocPrcAddr common.Address, _tp common.Address) (*types.Transaction, error) {
-	return _Ktv2fact.Contract.Create(&_Ktv2fact.TransactOpts, _burnDest, _token, _dest, _pool, _ocPrcAddr, _tp)
+// Solidity: function create(address _burnDest, address _token, address _dest, address _pool, address _ocPrcAddr, address _tp, bool v2) returns()
+func (_Ktv2fact *Ktv2factSession) Create(_burnDest common.Address, _token common.Address, _dest common.Address, _pool common.Address, _ocPrcAddr common.Address, _tp common.Address, v2 bool) (*types.Transaction, error) {
+	return _Ktv2fact.Contract.Create(&_Ktv2fact.TransactOpts, _burnDest, _token, _dest, _pool, _ocPrcAddr, _tp, v2)
 }
 
-// Create is a paid mutator transaction binding the contract method 0x43f70917.
+// Create is a paid mutator transaction binding the contract method 0xaf1b39b3.
 //
-// Solidity: function create(address _burnDest, address _token, address _dest, address _pool, address _ocPrcAddr, address _tp) returns()
-func (_Ktv2fact *Ktv2factTransactorSession) Create(_burnDest common.Address, _token common.Address, _dest common.Address, _pool common.Address, _ocPrcAddr common.Address, _tp common.Address) (*types.Transaction, error) {
-	return _Ktv2fact.Contract.Create(&_Ktv2fact.TransactOpts, _burnDest, _token, _dest, _pool, _ocPrcAddr, _tp)
+// Solidity: function create(address _burnDest, address _token, address _dest, address _pool, address _ocPrcAddr, address _tp, bool v2) returns()
+func (_Ktv2fact *Ktv2factTransactorSession) Create(_burnDest common.Address, _token common.Address, _dest common.Address, _pool common.Address, _ocPrcAddr common.Address, _tp common.Address, v2 bool) (*types.Transaction, error) {
+	return _Ktv2fact.Contract.Create(&_Ktv2fact.TransactOpts, _burnDest, _token, _dest, _pool, _ocPrcAddr, _tp, v2)
 }
 
 // Ktv2factCreatedIterator is returned from FilterCreated and is used to iterate over the raw logs and unpacked data for Created events raised by the Ktv2fact contract.

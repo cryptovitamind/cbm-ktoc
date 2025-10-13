@@ -4,20 +4,21 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"ktp2/src/abis/ktv2fact"
 	"math/big"
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	log "github.com/sirupsen/logrus"
-
-	"ktp2/src/abis" // Your package path
 )
 
 // printCurrentEpochInterval logs the current epoch interval details for a KT contract.
-func printCurrentEpochInterval(cProps *ConnectionProps, kt *abis.Ktv2) error {
+func printCurrentEpochInterval(cProps *ConnectionProps, kt Ktv2Interface) error {
 	callOpts := &bind.CallOpts{
 		Context: context.Background(),
 		Pending: false,
@@ -114,11 +115,23 @@ func CreateKtFromFact(cProps *ConnectionProps) (common.Address, error) {
 	log.Infof("Using factory contract at address: %s", factoryAddr.Hex())
 
 	// Instantiate the factory contract with the Ethereum client
-	instance, err := abis.NewKtv2fact(factoryAddr, cProps.Backend)
+	instance, err := ktv2fact.NewKtv2fact(factoryAddr, cProps.Backend)
 	if err != nil {
 		log.Errorf("Failed to instantiate factory contract: %v", err)
 		return common.Address{}, fmt.Errorf("failed to instantiate factory: %w", err)
 	}
+
+	// Check if factory has code deployed
+	code, err := cProps.Client.CodeAt(context.Background(), factoryAddr, nil)
+	if err != nil {
+		log.Errorf("Failed to fetch factory code: %v", err)
+		return common.Address{}, fmt.Errorf("failed to fetch code: %w", err)
+	}
+	if len(code) == 0 {
+		log.Errorf("Factory contract not deployed at %s", factoryAddr.Hex())
+		return common.Address{}, fmt.Errorf("factory not deployed")
+	}
+	log.Info("Factory contract is deployed")
 
 	// Fetch the suggested gas price from the network
 	gasPrice, err := cProps.Client.SuggestGasPrice(context.Background())
@@ -158,6 +171,7 @@ func CreateKtFromFact(cProps *ConnectionProps) (common.Address, error) {
 		Pool       common.Address
 		OCPrice    common.Address
 		TokenPrice common.Address
+		V2Uniswap  bool
 	}{
 		BurnDest:   ToAddr(cProps.Addresses.DeadAddr),
 		Token:      ToAddr(cProps.Addresses.TknAddr),
@@ -165,7 +179,60 @@ func CreateKtFromFact(cProps *ConnectionProps) (common.Address, error) {
 		Pool:       ToAddr(cProps.Addresses.PoolAddr),
 		OCPrice:    ToAddr(cProps.Addresses.MyPublicKey),
 		TokenPrice: ToAddr(cProps.Addresses.TknPrcAddr),
+		V2Uniswap:  cProps.V2Uniswap,
 	}
+
+	// print all the arguments first
+	log.Infof("KT Creation Arguments:")
+	log.Infof("  Burn Destination: %s", args.BurnDest.Hex())
+	log.Infof("  Token Address: %s", args.Token.Hex())
+	log.Infof("  Target Address: %s", args.Dest.Hex())
+	log.Infof("  Pool Address: %s", args.Pool.Hex())
+	log.Infof("  OC Price Address: %s", args.OCPrice.Hex())
+	log.Infof("  Token Price Address: %s", args.TokenPrice.Hex())
+	log.Infof("  V2 Uniswap: %t", args.V2Uniswap)
+	log.Infof("  Gas Limit: %d", auth.GasLimit)
+
+	// Simulate the transaction to check for reverts
+	parsedABI, err := abi.JSON(strings.NewReader(ktv2fact.Ktv2factMetaData.ABI))
+	if err != nil {
+		log.Errorf("Failed to parse ABI: %v", err)
+		return common.Address{}, fmt.Errorf("failed to parse ABI: %w", err)
+	}
+
+	data, err := parsedABI.Pack("create", args.BurnDest, args.Token, args.Dest, args.Pool, args.OCPrice, args.TokenPrice, args.V2Uniswap)
+	if err != nil {
+		log.Errorf("Failed to pack create data: %v", err)
+		return common.Address{}, fmt.Errorf("failed to pack data: %w", err)
+	}
+
+	simCall := ethereum.CallMsg{
+		From:     auth.From,
+		To:       &factoryAddr,
+		Gas:      auth.GasLimit,
+		GasPrice: auth.GasPrice,
+		Value:    auth.Value,
+		Data:     data,
+	}
+
+	simResult, err := cProps.Backend.CallContract(context.Background(), simCall, nil)
+	if err != nil {
+		log.Errorf("Simulation call failed: %v", err)
+		log.Errorf("Revert data: %x", simResult)
+		return common.Address{}, fmt.Errorf("simulation failed: %w (data: %x)", err, simResult)
+	}
+
+	if len(simResult) > 0 {
+		revertMsg := string(simResult)
+		if strings.HasPrefix(revertMsg, "0x") {
+			log.Errorf("Transaction simulation reverted with data: %s", simResult)
+		} else {
+			log.Errorf("Transaction simulation reverted with message: %s", revertMsg)
+		}
+		return common.Address{}, fmt.Errorf("transaction would revert: %s", revertMsg)
+	}
+
+	log.Info("Transaction simulation successful")
 
 	// Prompt user for confirmation
 	log.Info("KT creation arguments:")
@@ -176,6 +243,7 @@ func CreateKtFromFact(cProps *ConnectionProps) (common.Address, error) {
 	log.Infof("  OC Price Address: %s", args.OCPrice.Hex())
 	log.Infof("  Token Price Address: %s", args.TokenPrice.Hex())
 	log.Infof("  Gas Limit: %d", auth.GasLimit)
+	log.Infof("  V2 Uniswap: %t", args.V2Uniswap)
 
 	fmt.Print("Are you sure you want to create this contract with these arguments? (y/N): ")
 	scanner := bufio.NewScanner(os.Stdin)
@@ -194,7 +262,10 @@ func CreateKtFromFact(cProps *ConnectionProps) (common.Address, error) {
 		args.Dest,       // Target address
 		args.Pool,       // Pool address
 		args.OCPrice,    // OC price address (using sender’s public key)
-		args.TokenPrice) // Token price address
+		args.TokenPrice, // Token price address
+		args.V2Uniswap,  // Whether to use Uniswap V2
+	)
+
 	if err != nil {
 		log.Errorf("Failed to submit KT creation transaction: %v", err)
 		log.Warn("This might be due to insufficient funds, low gas limit, or invalid contract addresses.")
@@ -237,7 +308,7 @@ func PrintKtFactContracts(cProps *ConnectionProps) (common.Address, error) {
 	log.Infof("Factory address: %s", cProps.Addresses.FactoryAddr)
 
 	// Instantiate the factory contract
-	instance, err := abis.NewKtv2fact(factoryAddr, cProps.Backend)
+	instance, err := ktv2fact.NewKtv2fact(factoryAddr, cProps.Backend)
 	if err != nil {
 		log.Errorf("Factory instantiation failed: %v", err)
 		return common.Address{}, fmt.Errorf("failed to instantiate factory: %w", err)
@@ -274,6 +345,11 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 		From:    cProps.MyPubKey,
 	}
 
+	if cProps.Kt == nil {
+		log.Warnf("KT contract not initialized. Please set KT_ADDR in your .env file.")
+		return
+	}
+
 	totalStk, err := cProps.Kt.TotalStk(callOpts)
 	if err != nil {
 		log.Printf("Error fetching TotalStk: %v", err)
@@ -304,6 +380,13 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 		log.Printf("Error fetching BurnFactor: %v", err)
 		return
 	}
+
+	v2Uniswap, err := cProps.Kt.V2(callOpts)
+	if err != nil {
+		log.Printf("Error fetching V2Uniswap: %v", err)
+		return
+	}
+
 	startBlock, err := cProps.Kt.StartBlock(callOpts)
 	if err != nil {
 		log.Printf("Error fetching StartBlock: %v", err)
@@ -319,6 +402,13 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 		log.Printf("Error fetching ConsensusReq: %v", err)
 		return
 	}
+
+	totalOcs, err := cProps.Kt.TotalOC(callOpts)
+	if err != nil {
+		log.Printf("Error fetching TotalOC: %v", err)
+		return
+	}
+
 	ocFee, err := cProps.Kt.OcFee(callOpts)
 	if err != nil {
 		log.Printf("Error fetching OcFee: %v", err)
@@ -327,26 +417,6 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 	tlOcFees, err := cProps.Kt.TlOcFees(callOpts)
 	if err != nil {
 		log.Printf("Error fetching TlOcFees: %v", err)
-		return
-	}
-	tokenAddr, err := cProps.Kt.TokenAddr(callOpts)
-	if err != nil {
-		log.Printf("Error fetching TokenAddr: %v", err)
-		return
-	}
-	dest, err := cProps.Kt.Dest(callOpts)
-	if err != nil {
-		log.Printf("Error fetching Dest: %v", err)
-		return
-	}
-	burnDest, err := cProps.Kt.BurnDest(callOpts)
-	if err != nil {
-		log.Printf("Error fetching BurnDest: %v", err)
-		return
-	}
-	pool, err := cProps.Kt.Pool(callOpts)
-	if err != nil {
-		log.Printf("Error fetching Pool: %v", err)
 		return
 	}
 
@@ -364,14 +434,10 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 	log.Printf("Start Block: %s", startBlock.String())
 	log.Printf("Epoch Interval: %d", epochInterval)
 	log.Printf("Consensus Requirement: %d", consensusReq)
+	log.Printf("Total OCs: %d", totalOcs)
 	log.Printf("OC Fee: %d", ocFee)
 	log.Printf("Total OC Fees: %s", tlOcFees.String())
-
-	log.Print("Addresses:")
-	log.Printf(" Token Address: %s", tokenAddr.Hex())
-	log.Printf(" Destination: %s", dest.Hex())
-	log.Printf(" Burn Destination: %s", burnDest.Hex())
-	log.Printf(" Pool: %s", pool.Hex())
+	log.Printf("Using Uniswap V2: %t", v2Uniswap)
 
 	// Convert Wei to ETH
 	PrintKtBalance(cProps)
@@ -380,6 +446,11 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 }
 
 func PrintKtBalance(cProps *ConnectionProps) {
+	if cProps.KtAddr == (common.Address{}) {
+		log.Warnf("KT_ADDR not set, cannot fetch balance.")
+		return
+	}
+
 	balance, err := cProps.Client.BalanceAt(context.Background(), cProps.KtAddr, nil)
 	if err != nil {
 		log.Fatalf("Failed to get balance: %v", err)

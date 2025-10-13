@@ -119,13 +119,12 @@ func TestCalculateProbsForEachWallet_TotalMinZero(t *testing.T) {
 	totalMin := big.NewInt(0)
 
 	found := calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
-	if !found {
-		t.Errorf("Expected found=true, got false")
+	if found {
+		t.Errorf("Expected found=false, got true")
 	}
 
 	// Division by zero in big.Float.Quo results in +Inf
-	prob := stakeDataMinsMap[addr].Prob
-	if !prob.IsInf() { // Expect positive infinity
-		t.Errorf("Expected probability +Inf for totalMin=0, got %v", prob)
+	if stakeDataMinsMap[addr].Prob != nil {
+		t.Errorf("Expected probability to be nil")
 	}
 }
