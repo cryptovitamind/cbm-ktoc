@@ -420,6 +420,12 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 		return
 	}
 
+	owner, err := cProps.Kt.Owner(callOpts)
+	if err != nil {
+		log.Printf("Error fetching Owner: %v", err)
+		return
+	}
+
 	log.Printf("KT Contract Variables:")
 
 	// Convert totalGvn from Wei to ETH
@@ -438,6 +444,7 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 	log.Printf("OC Fee: %d", ocFee)
 	log.Printf("Total OC Fees: %s", tlOcFees.String())
 	log.Printf("Using Uniswap V2: %t", v2Uniswap)
+	log.Printf("Owner: %s", owner.Hex())
 
 	// Convert Wei to ETH
 	PrintKtBalance(cProps)

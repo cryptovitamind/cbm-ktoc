@@ -124,7 +124,7 @@ func HandleVoting(cProps *ktfunc.ConnectionProps, vf VoteFlags) bool {
 	// Validate data for voting operations
 	if operation == "vote_add" || operation == "vote_remove" {
 		if data == "" {
-			log.Warn("DataForOCVote is suppllied and is required for voting operations")
+			log.Warn("DataForOCVote was not supplied.")
 		}
 	}
 

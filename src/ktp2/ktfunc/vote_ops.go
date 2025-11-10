@@ -99,7 +99,7 @@ func VoteToAdd(cProps *ConnectionProps, targetAddr common.Address, data string) 
 	}
 
 	// Check if already voted for this add
-	hasVotedForAdd, err := cProps.Kt.HasVoted(callOpts, cProps.MyPubKey, targetAddr)
+	hasVotedForAdd, err := cProps.Kt.HasVotedAdd(callOpts, cProps.MyPubKey, targetAddr)
 	if err != nil {
 		log.Warnf("Failed to check if already voted to add: %v", err)
 	} else if hasVotedForAdd {
@@ -165,7 +165,7 @@ func ResetVoteToAdd(cProps *ConnectionProps, targetAddr common.Address) error {
 	// Pre-check if already voted for this add
 	callOpts := &bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey}
 
-	hasVotedForAdd, err := cProps.Kt.HasVoted(callOpts, cProps.MyPubKey, targetAddr)
+	hasVotedForAdd, err := cProps.Kt.HasVotedAdd(callOpts, cProps.MyPubKey, targetAddr)
 	if err != nil {
 		log.Warnf("Failed to check if voted to add: %v", err)
 	} else if !hasVotedForAdd {
@@ -216,7 +216,7 @@ func ResetVoteToRemove(cProps *ConnectionProps, targetAddr common.Address) error
 	// Pre-check if already voted for this remove
 	callOpts := &bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey}
 
-	hasVotedForRemove, err := cProps.Kt.HasVoted(callOpts, cProps.MyPubKey, targetAddr)
+	hasVotedForRemove, err := cProps.Kt.HasVotedRemove(callOpts, cProps.MyPubKey, targetAddr)
 	if err != nil {
 		log.Warnf("Failed to check if voted to remove: %v", err)
 	} else if !hasVotedForRemove {

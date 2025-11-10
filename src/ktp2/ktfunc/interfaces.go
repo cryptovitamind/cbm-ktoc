@@ -17,6 +17,7 @@ const (
 	DefaultGasLimit     uint64        = 24000
 	DefaultBlocksToWait uint64        = 10
 	TimeToWaitForBlocks time.Duration = 5 * time.Second
+	DefaultChunkSize    int           = 500
 )
 
 type EthClient interface {
@@ -33,6 +34,20 @@ type EthClient interface {
 	SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error)
 }
 
+type StakedIterator interface {
+	Next() bool
+	Event() *ktv2.Ktv2Staked
+	Error() error
+	Close() error
+}
+
+type WithdrewIterator interface {
+	Next() bool
+	Event() *ktv2.Ktv2Withdrew
+	Error() error
+	Close() error
+}
+
 type Ktv2Interface interface {
 	StartBlock(opts *bind.CallOpts) (*big.Int, error)
 	EpochInterval(opts *bind.CallOpts) (uint16, error)
@@ -42,15 +57,17 @@ type Ktv2Interface interface {
 	BlockRwd(opts *bind.CallOpts, blockNumber *big.Int, recipient common.Address) (uint16, error)
 	ConsensusReq(opts *bind.CallOpts) (uint16, error)
 	TotalOC(opts *bind.CallOpts) (uint16, error)
-	FilterStaked(opts *bind.FilterOpts) (*ktv2.Ktv2StakedIterator, error)
-	FilterWithdrew(opts *bind.FilterOpts) (*ktv2.Ktv2WithdrewIterator, error)
+	FilterStaked(opts *bind.FilterOpts) (StakedIterator, error)
+	FilterWithdrew(opts *bind.FilterOpts) (WithdrewIterator, error)
 	Give(opts *bind.TransactOpts) (*types.Transaction, error)
-	WithdrawOCFee(opts *bind.TransactOpts, blocks []uint32) (*types.Transaction, error)
+	WithdrawOCFee(opts *bind.TransactOpts) (*types.Transaction, error)
+	PastOcFees(opts *bind.CallOpts, oc common.Address) (*big.Int, error)
 	VoteToAdd(opts *bind.TransactOpts, newOC common.Address, data string) (*types.Transaction, error)
 	VoteToRemove(opts *bind.TransactOpts, existingOC common.Address, data string) (*types.Transaction, error)
 	ResetVoteToAdd(opts *bind.TransactOpts, newOC common.Address) (*types.Transaction, error)
 	ResetVoteToRemove(opts *bind.TransactOpts, existingOC common.Address) (*types.Transaction, error)
 	SetEpochInterval(opts *bind.TransactOpts, newInterval uint16) (*types.Transaction, error)
+	SetOCFee(opts *bind.TransactOpts, fee uint16) (*types.Transaction, error)
 
 	TotalStk(opts *bind.CallOpts) (*big.Int, error)
 	TotalGvn(opts *bind.CallOpts) (*big.Int, error)
@@ -69,7 +86,9 @@ type Ktv2Interface interface {
 	FilterVoted(opts *bind.FilterOpts) (*ktv2.Ktv2VotedIterator, error)
 
 	OcRwdrs(opts *bind.CallOpts, address common.Address) (bool, error)
-	HasVoted(opts *bind.CallOpts, voter common.Address, target common.Address) (bool, error)
+	HasVotedAdd(opts *bind.CallOpts, voter common.Address, target common.Address) (bool, error)
+	HasVotedRemove(opts *bind.CallOpts, voter common.Address, target common.Address) (bool, error)
+	Owner(opts *bind.CallOpts) (common.Address, error)
 }
 
 // ConnectionProps holds Ethereum connection properties and contract instances.
@@ -87,6 +106,8 @@ type ConnectionProps struct {
 	BlocksToWait uint64               // Number of blocks to wait for transactions to confirm
 	QueryDelay   time.Duration        // Delay between API queries in milliseconds to prevent rate limiting
 	V2Uniswap    bool                 // If true, use Uniswap V2, else V1.
+	ChunkSize    int                  // Size of chunks for processing large data sets
+	WaitDuration time.Duration        // Duration to wait between operations
 }
 
 // Addresses holds Ethereum addresses and private keys from environment variables.
@@ -102,10 +123,55 @@ type Addresses struct {
 	KtAddr       string // KT contract address
 	EthEndpoint  string // Ethereum client endpoint
 	KtStartBlock string // Start block number for KT contract
+	WaitDuration string // Duration to wait between operations (e.g., "1s", "2m")
 }
 
 // UserStakeData holds staking-related data for a user.
 type UserStakeData struct {
 	StakeAmount *big.Int   // Amount of tokens staked
 	Prob        *big.Float // Probability (likely for voting or rewards)
+}
+
+type StakedIteratorWrapper struct {
+	*ktv2.Ktv2StakedIterator
+}
+
+func (w *StakedIteratorWrapper) Event() *ktv2.Ktv2Staked {
+	return w.Ktv2StakedIterator.Event
+}
+
+func (w *StakedIteratorWrapper) Close() error {
+	return w.Ktv2StakedIterator.Close()
+}
+
+type WithdrewIteratorWrapper struct {
+	*ktv2.Ktv2WithdrewIterator
+}
+
+func (w *WithdrewIteratorWrapper) Event() *ktv2.Ktv2Withdrew {
+	return w.Ktv2WithdrewIterator.Event
+}
+
+func (w *WithdrewIteratorWrapper) Close() error {
+	return w.Ktv2WithdrewIterator.Close()
+}
+
+type Ktv2Wrapper struct {
+	*ktv2.Ktv2
+}
+
+func (w *Ktv2Wrapper) FilterStaked(opts *bind.FilterOpts) (StakedIterator, error) {
+	iter, err := w.Ktv2.FilterStaked(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &StakedIteratorWrapper{iter}, nil
+}
+
+func (w *Ktv2Wrapper) FilterWithdrew(opts *bind.FilterOpts) (WithdrewIterator, error) {
+	iter, err := w.Ktv2.FilterWithdrew(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &WithdrewIteratorWrapper{iter}, nil
 }

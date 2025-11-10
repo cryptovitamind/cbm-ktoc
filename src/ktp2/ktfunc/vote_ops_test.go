@@ -47,7 +47,7 @@ func (m *MockKtv2) StartBlock(opts *bind.CallOpts) (*big.Int, error) {
 // EpochInterval mock
 func (m *MockKtv2) EpochInterval(opts *bind.CallOpts) (uint16, error) {
 	args := m.Called(opts)
-	return uint16(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint16), args.Error(1)
 }
 
 // UserStks mock
@@ -71,25 +71,25 @@ func (m *MockKtv2) Rwd(opts *bind.TransactOpts, recipient common.Address, amount
 // BlockRwd mock
 func (m *MockKtv2) BlockRwd(opts *bind.CallOpts, blockNumber *big.Int, recipient common.Address) (uint16, error) {
 	args := m.Called(opts, blockNumber, recipient)
-	return uint16(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint16), args.Error(1)
 }
 
 // ConsensusReq mock
 func (m *MockKtv2) ConsensusReq(opts *bind.CallOpts) (uint16, error) {
 	args := m.Called(opts)
-	return uint16(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint16), args.Error(1)
 }
 
 // FilterStaked mock
-func (m *MockKtv2) FilterStaked(opts *bind.FilterOpts) (*ktv2.Ktv2StakedIterator, error) {
+func (m *MockKtv2) FilterStaked(opts *bind.FilterOpts) (StakedIterator, error) {
 	args := m.Called(opts)
-	return args.Get(0).(*ktv2.Ktv2StakedIterator), args.Error(1)
+	return args.Get(0).(StakedIterator), args.Error(1)
 }
 
 // FilterWithdrew mock
-func (m *MockKtv2) FilterWithdrew(opts *bind.FilterOpts) (*ktv2.Ktv2WithdrewIterator, error) {
+func (m *MockKtv2) FilterWithdrew(opts *bind.FilterOpts) (WithdrewIterator, error) {
 	args := m.Called(opts)
-	return args.Get(0).(*ktv2.Ktv2WithdrewIterator), args.Error(1)
+	return args.Get(0).(WithdrewIterator), args.Error(1)
 }
 
 // Give mock
@@ -99,8 +99,8 @@ func (m *MockKtv2) Give(opts *bind.TransactOpts) (*types.Transaction, error) {
 }
 
 // WithdrawOCFee mock
-func (m *MockKtv2) WithdrawOCFee(opts *bind.TransactOpts, blocks []uint32) (*types.Transaction, error) {
-	args := m.Called(opts, blocks)
+func (m *MockKtv2) WithdrawOCFee(opts *bind.TransactOpts) (*types.Transaction, error) {
+	args := m.Called(opts)
 	return args.Get(0).(*types.Transaction), args.Error(1)
 }
 
@@ -119,6 +119,12 @@ func (m *MockKtv2) ResetVoteToRemove(opts *bind.TransactOpts, existingOC common.
 // SetEpochInterval mock
 func (m *MockKtv2) SetEpochInterval(opts *bind.TransactOpts, newInterval uint16) (*types.Transaction, error) {
 	args := m.Called(opts, newInterval)
+	return args.Get(0).(*types.Transaction), args.Error(1)
+}
+
+// SetOCFee mock
+func (m *MockKtv2) SetOCFee(opts *bind.TransactOpts, fee uint16) (*types.Transaction, error) {
+	args := m.Called(opts, fee)
 	return args.Get(0).(*types.Transaction), args.Error(1)
 }
 
@@ -143,19 +149,19 @@ func (m *MockKtv2) TotalBurned(opts *bind.CallOpts) (*big.Int, error) {
 // MaxBrnPrc mock
 func (m *MockKtv2) MaxBrnPrc(opts *bind.CallOpts) (uint16, error) {
 	args := m.Called(opts)
-	return uint16(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint16), args.Error(1)
 }
 
 // DonationPrc mock
 func (m *MockKtv2) DonationPrc(opts *bind.CallOpts) (uint16, error) {
 	args := m.Called(opts)
-	return uint16(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint16), args.Error(1)
 }
 
 // BurnFactor mock
 func (m *MockKtv2) BurnFactor(opts *bind.CallOpts) (uint16, error) {
 	args := m.Called(opts)
-	return uint16(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint16), args.Error(1)
 }
 
 // V2 mock
@@ -167,7 +173,7 @@ func (m *MockKtv2) V2(opts *bind.CallOpts) (bool, error) {
 // OcFee mock
 func (m *MockKtv2) OcFee(opts *bind.CallOpts) (uint16, error) {
 	args := m.Called(opts)
-	return uint16(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint16), args.Error(1)
 }
 
 // OcFees mock
@@ -212,10 +218,20 @@ func (m *MockKtv2) OcRwdrs(opts *bind.CallOpts, oc common.Address) (bool, error)
 	return args.Bool(0), args.Error(1)
 }
 
-// HasVoted mock
-func (m *MockKtv2) HasVoted(opts *bind.CallOpts, voter common.Address, oc common.Address) (bool, error) {
+func (m *MockKtv2) HasVotedAdd(opts *bind.CallOpts, voter common.Address, oc common.Address) (bool, error) {
 	args := m.Called(opts, voter, oc)
 	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockKtv2) HasVotedRemove(opts *bind.CallOpts, voter common.Address, oc common.Address) (bool, error) {
+	args := m.Called(opts, voter, oc)
+	return args.Bool(0), args.Error(1)
+}
+
+// Owner mock
+func (m *MockKtv2) Owner(opts *bind.CallOpts) (common.Address, error) {
+	args := m.Called(opts)
+	return args.Get(0).(common.Address), args.Error(1)
 }
 
 // MockEthClient for ethclient
@@ -250,13 +266,13 @@ func (m *MockEthClient) BalanceAt(ctx context.Context, account common.Address, b
 // PendingNonceAt mock
 func (m *MockEthClient) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
 	args := m.Called(ctx, account)
-	return uint64(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint64), args.Error(1)
 }
 
 // BlockNumber mock
 func (m *MockEthClient) BlockNumber(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
-	return uint64(args.Int(0)), args.Error(1)
+	return args.Get(0).(uint64), args.Error(1)
 }
 
 // SuggestGasPrice mock
@@ -285,6 +301,12 @@ func (m *MockEthClient) FilterLogs(ctx context.Context, query ethereum.FilterQue
 // SubscribeFilterLogs mock
 func (m *MockEthClient) SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
 	return nil, nil
+}
+
+// PastOcFees
+func (m *MockKtv2) PastOcFees(opts *bind.CallOpts, oc common.Address) (*big.Int, error) {
+	args := m.Called(opts, oc)
+	return args.Get(0).(*big.Int), args.Error(1)
 }
 
 // TestValidateAddress tests the address validation helper.
@@ -368,7 +390,7 @@ func TestVoteToAdd_Success(t *testing.T) {
 
 	mockClient.On("BalanceAt", mock.Anything, myPubKey, (*big.Int)(nil)).Return(big.NewInt(1000000000000000000), nil)
 	mockKt.On("OcRwdrs", mock.Anything, targetAddr).Return(false, nil)
-	mockKt.On("HasVoted", mock.Anything, myPubKey, targetAddr).Return(false, nil)
+	mockKt.On("HasVotedAdd", mock.Anything, myPubKey, targetAddr).Return(false, nil)
 	mockClient.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(20000000000), nil)
 
 	mockKt.On("VoteToAdd", mock.Anything, targetAddr, data).Return(mockTx, nil)
@@ -411,7 +433,7 @@ func TestVoteToAdd_Revert(t *testing.T) {
 
 	mockClient.On("BalanceAt", mock.Anything, myPubKey, (*big.Int)(nil)).Return(big.NewInt(1000000000000000000), nil)
 	mockKt.On("OcRwdrs", mock.Anything, targetAddr).Return(false, nil)
-	mockKt.On("HasVoted", mock.Anything, myPubKey, targetAddr).Return(false, nil)
+	mockKt.On("HasVotedAdd", mock.Anything, myPubKey, targetAddr).Return(false, nil)
 	mockClient.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(20000000000), nil)
 
 	mockKt.On("VoteToAdd", mock.Anything, targetAddr, data).Return(mockTx, nil)
@@ -443,7 +465,7 @@ func TestVoteToAdd_ErrorInTransactor(t *testing.T) {
 	// Mock pre-checks
 	mockClient.On("BalanceAt", mock.Anything, myPubKey, (*big.Int)(nil)).Return(big.NewInt(1000000000000000000), nil)
 	mockKt.On("OcRwdrs", mock.Anything, targetAddr).Return(false, nil)
-	mockKt.On("HasVoted", mock.Anything, myPubKey, targetAddr).Return(false, nil)
+	mockKt.On("HasVotedAdd", mock.Anything, myPubKey, targetAddr).Return(false, nil)
 	mockClient.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(20000000000), nil)
 
 	// Mock NewTransactor to fail
@@ -582,7 +604,7 @@ func TestVoteToAdd_ErrorInVoteCall(t *testing.T) {
 	// Mock pre-checks
 	mockClient.On("BalanceAt", mock.Anything, myPubKey, (*big.Int)(nil)).Return(big.NewInt(1000000000000000000), nil)
 	mockKt.On("OcRwdrs", mock.Anything, targetAddr).Return(false, nil)
-	mockKt.On("HasVoted", mock.Anything, myPubKey, targetAddr).Return(false, nil)
+	mockKt.On("HasVotedAdd", mock.Anything, myPubKey, targetAddr).Return(false, nil)
 	mockClient.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(20000000000), nil)
 
 	newTransactor = func(_ *ConnectionProps) (*bind.TransactOpts, error) {
@@ -648,7 +670,7 @@ func TestVoteToAdd_ErrorInWaitMined(t *testing.T) {
 	// Mock pre-checks
 	mockClient.On("BalanceAt", mock.Anything, myPubKey, (*big.Int)(nil)).Return(big.NewInt(1000000000000000000), nil)
 	mockKt.On("OcRwdrs", mock.Anything, targetAddr).Return(false, nil)
-	mockKt.On("HasVoted", mock.Anything, myPubKey, targetAddr).Return(false, nil)
+	mockKt.On("HasVotedAdd", mock.Anything, myPubKey, targetAddr).Return(false, nil)
 	mockClient.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(20000000000), nil)
 
 	newTransactor = func(_ *ConnectionProps) (*bind.TransactOpts, error) {
@@ -730,7 +752,7 @@ func TestVoteToAdd_ErrorInWaitForBlocks(t *testing.T) {
 	// Mock pre-checks
 	mockClient.On("BalanceAt", mock.Anything, myPubKey, (*big.Int)(nil)).Return(big.NewInt(1000000000000000000), nil)
 	mockKt.On("OcRwdrs", mock.Anything, targetAddr).Return(false, nil)
-	mockKt.On("HasVoted", mock.Anything, myPubKey, targetAddr).Return(false, nil)
+	mockKt.On("HasVotedAdd", mock.Anything, myPubKey, targetAddr).Return(false, nil)
 	mockClient.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(20000000000), nil)
 
 	newTransactor = func(_ *ConnectionProps) (*bind.TransactOpts, error) {

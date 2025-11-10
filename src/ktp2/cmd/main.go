@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -59,15 +60,20 @@ type Flags struct {
 	verbose               bool
 	ktProps               bool
 	queryFees             string
-	withdrawFees          bool
+	withdrawFees          string
+	setOCFee              uint16
 	printEvents           bool
 	v2Uniswap             bool
+	chunkSize             int
 	voteToRemoveOC        string
 	voteToAddOC           string
 	resetVoteToAddOC      string
 	resetVoteToRemoveOC   string
 	dataForOCVote         string
 	printOCVoteEvents     string
+	printStakeEvents      string
+	currentBlock          bool
+	waitDuration          time.Duration
 }
 
 func main() {
@@ -99,6 +105,7 @@ func loadMasterProperties() ktfunc.Addresses {
 		KtAddr:       os.Getenv("KT_ADDR"),
 		KtStartBlock: os.Getenv("KT_START_BLOCK"),
 		EthEndpoint:  os.Getenv("ETH_ENDPOINT"),
+		WaitDuration: os.Getenv("WAIT_DURATION"),
 	}
 
 	// Verify required properties
@@ -119,8 +126,8 @@ func displayStartupBanner() {
 	fmt.Print("\n")
 	fmt.Print("──────────────────────────────────────────────────────────────────────────────────────────\n")
 	fmt.Print("\n")
-	figure.NewColorFigure("KT OC", "larry3d", "red", true).Print()
-	figure.NewColorFigure("v0.2-beta", "larry3d", "red", true).Print()
+	figure.NewColorFigure("KTOC", "larry3d", "red", true).Print()
+	figure.NewColorFigure("v0.3-beta", "larry3d", "red", true).Print()
 	fmt.Print("\n")
 	figure.NewColorFigure("shinatoken", "binary", "red", true).Print()
 	fmt.Print("\n")
@@ -157,12 +164,16 @@ func parseFlags() Flags {
 	createKt := flag.Bool("createKt", false, "Deploy a new KT contract via the factory contract. Requires FACTORY_ADDR and sufficient ETH/gas. Prompts for confirmation.")
 	ktProps := flag.Bool("ktProps", false, "Display information about an existing KT contract (specified in KT_ADDR). Useful for debugging or testing KT behavior.")
 	gasLimit := flag.Uint64("gasLimit", ktfunc.DefaultGasLimit, fmt.Sprintf("Set the gas limit for transactions (default is %d. Use 3000000 for contract creation).", ktfunc.DefaultGasLimit))
-	blocksToWait := flag.Uint64("blocksToWait", ktfunc.DefaultBlocksToWait, fmt.Sprintf("Set the number of blocks to wait for transactions to be mined (default is %d).", ktfunc.DefaultBlocksToWait))
+	blocksToWait := flag.Uint64("blocksToWait", 0, fmt.Sprintf("Set the number of blocks to wait for transactions to be mined (default is %d).", ktfunc.DefaultBlocksToWait))
 	verbose := flag.Bool("verbose", false, "Display verbose output during operations.")
 	queryFees := flag.String("queryFees", "", "Query the current gas fees for a specified block range with syntax <startBlock>:<endBlock>")
-	withdrawFees := flag.Bool("withdrawFees", false, "Withdraw owed fees from kt. syntax: <block1>,<block2>,<blockn>,etc...")
+	withdrawFees := flag.String("withdrawFees", "", "Withdraw owed fees from kt. syntax: <block1>,<block2>,<blockn>,..., use 'auto' to attempt to withdraw all owed fees.")
+	setOCFeePtr := flag.Uint("setOCFee", 0, "Set the OC fee to the specified uint16 value. Multiply by ten. For example, use 20 for 2% fee.")
+	currentBlock := flag.Bool("currentBlock", false, "Print the current Ethereum block number. Useful for fetching fees owed.")
+	waitDuration := flag.Duration("waitDuration", ktfunc.TimeToWaitForBlocks, "Set the duration to wait between operations (ex: 1s, 2m). Default is 1 minute.")
 	printEvents := flag.Bool("printEvents", false, "Print the contents of the cache for debugging purposes.")
-	v2Uniswap := flag.Bool("v2Uniswap", false, "Use Uniswap V3 instead of V2 for token swaps. Set this if your token pool is V3.")
+	v2Uniswap := flag.Bool("v2Uniswap", false, "Use Uniswap V2 instead of V3 for token swaps. Set this if your token pool is V3.")
+	chunkSize := flag.Int("chunkSize", 0, "Set the chunk size for processing large data sets. Adjust based on performance needs.")
 	voteToRemoveOC := flag.String("voteToRemoveOC", "", "Vote to remove an OC with the given Ethereum address")
 	voteToAddOC := flag.String("voteToAddOC", "", "Vote to add an OC with the given Ethereum address")
 	resetVoteToAddOC := flag.String("resetVoteToAddOC", "", "Reset vote to add an OC with the given Ethereum address")
@@ -179,10 +190,11 @@ func parseFlags() Flags {
 	keys := flag.Bool("keys", false, "TESTING: Display deterministic private keys for test wallets. For development only—do not use these keys on mainnet!")
 	initTestWallets := flag.Bool("init", false, "TESTING: Initialize test wallets with ETH and tokens. Sets up a testing environment. Requires sufficient funds in MY_PUBLIC_KEY.")
 	logStakesAndWithdraws := flag.String("logStakesAndWithdraws", "", "TESTING: Gather stakes and withdrawals from the KT contract. Useful for testing stake data collection logic. Syntax: <startBlock>:<endBlock>.")
+	printStakeEvents := flag.String("printStakeEvents", "", "TESTING: Print Staked events from the KT contract between specified blocks. Syntax: <startBlock>:<endBlock>.")
 
 	// Custom usage message with guides
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "\n🌟 Welcome to KT v0.2 (beta) - CLI 🌟\n")
+		fmt.Fprintf(os.Stderr, "\n🌟 Welcome to KT v0.3 (beta) - CLI 🌟\n")
 		fmt.Fprintf(os.Stderr, "========================================================\n")
 		fmt.Fprintf(os.Stderr, "KT is an experimental blockchain tool. Use these flags to interact with KTv2 contracts.\n")
 		fmt.Fprintf(os.Stderr, "Set required environment variables (e.g., MY_PUBLIC_KEY, ETH_ENDPOINT) in a .env file.\n")
@@ -201,7 +213,11 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -epochDuration <n>  %s\n", "Set epoch duration in blocks (e.g., -epochDuration 3600). Run with -ktProps to see current value.")
 		fmt.Fprintf(os.Stderr, "  -verbose            %s\n", "Display verbose output during operations.")
 		fmt.Fprintf(os.Stderr, "  -queryFees <n>:<n>  %s\n", "Query the reward amount owed this node. <startBlock>:<endBlock>.")
-		fmt.Fprintf(os.Stderr, "  -v1Uniswap          %s\n", "Use Uniswap V1 instead of V2 for token swaps.")
+		fmt.Fprintf(os.Stderr, "  -currentBlock       %s\n", "Print the current Ethereum block number. Useful for fetching fees owed.")
+		fmt.Fprintf(os.Stderr, "  -waitDuration <duration> %s\n", "Set the duration to wait between operations (e.g., 1s, 2m).")
+		fmt.Fprintf(os.Stderr, "  -v2Uniswap          %s\n", "Use Uniswap V2 instead of V3 for token swaps.")
+		fmt.Fprintf(os.Stderr, "  -chunkSize <n>      %s\n", "Set the chunk size for processing large data sets.")
+		fmt.Fprintf(os.Stderr, "  -setOCFee <n>       %s\n", "Set the OC fee to the specified uint16 value. Multiply by ten. For example, use 20 for 2% fee.")
 		fmt.Fprintf(os.Stderr, "  -withdrawFees       %s\n", "Withdraw owed fees from kt.")
 		PrintOCUsage()
 
@@ -214,6 +230,7 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -init               %s\n", "Initialize test wallets with ETH and tokens.")
 		fmt.Fprintf(os.Stderr, "  -logStakesAndWithdraws <start:end> %s\n", "Gather stakes and withdrawals from the KT contract. Syntax: <startBlock>:<endBlock>.")
 		fmt.Fprintf(os.Stderr, "  -printEvents       %s\n", "Print the contents of the events cache for debugging purposes.")
+		fmt.Fprintf(os.Stderr, "  -printStakeEvents <start:end> %s\n", "Print Staked events from the KT contract between specified blocks. Syntax: <startBlock>:<endBlock>.")
 
 		fmt.Fprintf(os.Stderr, "\n💡 Usage Tips:\n")
 		fmt.Fprintf(os.Stderr, "  - Use -gasLimit for operations like -createKt (e.g., 3000000).\n")
@@ -224,6 +241,7 @@ func parseFlags() Flags {
 	flag.Parse()
 
 	return Flags{
+		help:                  *help,
 		continuous:            *continuous,
 		giveAmount:            *giveAmount,
 		stakeAmount:           *stakeAmount,
@@ -237,14 +255,17 @@ func parseFlags() Flags {
 		findKts:               *findKts,
 		createKt:              *createKt,
 		gasLimit:              *gasLimit,
-		blocksToWait:          *blocksToWait,
 		ktBlock:               *ktBlock,
-		help:                  *help,
 		ktProps:               *ktProps,
 		verbose:               *verbose,
 		queryFees:             *queryFees,
 		withdrawFees:          *withdrawFees,
+		setOCFee:              uint16(*setOCFeePtr),
+		currentBlock:          *currentBlock,
+		blocksToWait:          *blocksToWait,
+		waitDuration:          *waitDuration,
 		v2Uniswap:             *v2Uniswap,
+		chunkSize:             *chunkSize,
 		printEvents:           *printEvents,
 		voteToRemoveOC:        *voteToRemoveOC,
 		voteToAddOC:           *voteToAddOC,
@@ -252,6 +273,7 @@ func parseFlags() Flags {
 		resetVoteToRemoveOC:   *resetVoteToRemoveOC,
 		printOCVoteEvents:     *printOCVoteEvents,
 		dataForOCVote:         *dataForOCVote,
+		printStakeEvents:      *printStakeEvents,
 	}
 }
 
@@ -263,6 +285,52 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 
 	if flags.verbose {
 		log.SetLevel(log.DebugLevel)
+	}
+
+	if flags.currentBlock {
+		currentBlock, err := ktfunc.GetCurrentBlock(cProps)
+		if err != nil {
+			log.Warnf("Error getting current block: %v", err)
+		}
+		log.Infof("")
+		log.Infof("Current Ethereum block number: %d", currentBlock.Number)
+	}
+
+	if flags.blocksToWait != 0 {
+		log.Debugf("Setting blocksToWait to %d from command line flag", flags.blocksToWait)
+		cProps.BlocksToWait = flags.blocksToWait
+	} else if len(os.Getenv("BLOCKS_TO_WAIT")) > 0 {
+		blocksToWait := os.Getenv("BLOCKS_TO_WAIT")
+		log.Debugf("Setting blocksToWait to %s from environment variable", blocksToWait)
+		btw, err := strconv.ParseUint(blocksToWait, 10, 64)
+		if err != nil {
+			log.Warnf("Invalid BLOCKS_TO_WAIT in environment; using default %d", ktfunc.DefaultBlocksToWait)
+			cProps.BlocksToWait = ktfunc.DefaultBlocksToWait
+		} else {
+			cProps.BlocksToWait = btw
+		}
+	} else {
+		cProps.BlocksToWait = ktfunc.DefaultBlocksToWait
+	}
+
+	if len(flags.printStakeEvents) > 0 {
+		LogOperationStart("Printing Staked events from KT contract")
+		parts := strings.Split(flags.printStakeEvents, ":")
+		if len(parts) != 2 {
+			log.Fatalf("Invalid format for -printStakeEvents. Expected <startBlock>:<endBlock>.")
+		}
+		startBlock, err1 := strconv.ParseUint(parts[0], 10, 64)
+		if err1 != nil {
+			log.Fatalf("Invalid start block number: %v", err1)
+		}
+		endBlock, err2 := strconv.ParseUint(parts[1], 10, 64)
+		if err2 != nil {
+			log.Fatalf("Invalid end block number: %v", err2)
+		}
+		err := ktfunc.PrintFilteredStakeEvents(cProps, startBlock, endBlock)
+		if err != nil {
+			log.Errorf("Error printing Staked events: %v", err)
+		}
 	}
 
 	if len(flags.voteToRemoveOC) > 0 || len(flags.voteToAddOC) > 0 ||
@@ -306,8 +374,16 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 		ktfunc.GetOCFeesOwed(cProps, flags.queryFees)
 	}
 
-	if flags.withdrawFees {
-		ktfunc.WithdrawOCFees(cProps, "")
+	if len(flags.withdrawFees) > 0 {
+		ktfunc.WithdrawOCFees(cProps, flags.withdrawFees)
+	}
+
+	if flags.setOCFee > 0 {
+		LogOperationStart("Setting OC fee")
+		err := ktfunc.SetOCFee(cProps, flags.setOCFee)
+		if err != nil {
+			log.Errorf("Failed to set OC fee: %v", err)
+		}
 	}
 
 	if flags.moveBlockForward != 0 {
@@ -398,11 +474,21 @@ func initTestWallets(cProps *ktfunc.ConnectionProps) {
 	tests.PrintBalances(cProps, cProps.MyPubKey)
 
 	keyPairs := tests.DeterministicPrivateKeys(10)
-	for _, kp := range keyPairs {
-		log.Printf("Initializing wallet: %s", kp.Address)
-		tests.SendSomeEth(cProps, kp.PrivateKey, 0.5)
-		tests.SendSomeTestTokens(cProps, kp.PrivateKey, 100)
-		tests.PrintBalances(cProps, ktfunc.GetPublicAddress(kp.PrivateKey))
+
+	fmt.Print("Are you sure you want to send eth to initialize wallets? (y/N): ")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	response := strings.ToLower(strings.TrimSpace(scanner.Text()))
+
+	if response != "y" && response != "yes" {
+		log.Errorf("user aborted KT creationtest initialization")
+	} else {
+		for _, kp := range keyPairs {
+			log.Printf("Initializing wallet: %s", kp.Address)
+			tests.SendSomeEth(cProps, kp.PrivateKey, 0.5)
+			tests.SendSomeTestTokens(cProps, kp.PrivateKey, 100)
+			tests.PrintBalances(cProps, ktfunc.GetPublicAddress(kp.PrivateKey))
+		}
 	}
 }
 
@@ -486,8 +572,8 @@ func testContinuousOperations(cProps *ktfunc.ConnectionProps) {
 			}
 		}
 
-		log.Info("Iteration complete: Sleeping for 5 seconds")
-		time.Sleep(5 * time.Second)
+		log.Printf("Iteration complete: Sleeping for %d seconds", int(cProps.WaitDuration.Seconds()))
+		time.Sleep(time.Duration(cProps.WaitDuration))
 	}
 }
 
@@ -501,6 +587,42 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 	cProps.GasLimit = flags.gasLimit
 	cProps.BlocksToWait = flags.blocksToWait
 	cProps.V2Uniswap = flags.v2Uniswap
+
+	if flags.chunkSize > 0 {
+		log.Debugf("Using chunkSize from flag: %d", flags.chunkSize)
+		cProps.ChunkSize = flags.chunkSize
+	} else if envChunk := os.Getenv("CHUNK_SIZE"); envChunk != "" {
+		log.Debugf("CHUNK_SIZE env var: %s", envChunk)
+		chunkSize, err := strconv.Atoi(envChunk)
+		if err == nil && chunkSize > 0 {
+			log.Debugf("Parsed chunkSize from env: %d", chunkSize)
+			cProps.ChunkSize = chunkSize
+		} else {
+			log.Debugf("Invalid CHUNK_SIZE env '%s' (err: %v), using default: %d", envChunk, err, ktfunc.DefaultChunkSize)
+			cProps.ChunkSize = ktfunc.DefaultChunkSize
+		}
+	} else {
+		log.Debugf("No CHUNK_SIZE env, using default: %d", ktfunc.DefaultChunkSize)
+		cProps.ChunkSize = ktfunc.DefaultChunkSize
+	}
+
+	duration := ktfunc.TimeToWaitForBlocks
+	if mstProps.WaitDuration != "" {
+		if parsed, err := time.ParseDuration(mstProps.WaitDuration); err != nil {
+			log.Warnf("Invalid wait duration '%s': %v. Using default: %v",
+				mstProps.WaitDuration, err, ktfunc.TimeToWaitForBlocks)
+		} else {
+			duration = parsed
+		}
+	}
+
+	// Override with flags if different from default
+	if flags.waitDuration != ktfunc.TimeToWaitForBlocks {
+		log.Infof("Overriding wait duration with command line flag: %v", flags.waitDuration)
+		duration = flags.waitDuration
+	}
+
+	cProps.WaitDuration = duration
 
 	// Set QueryDelay from environment variable or default to 100ms
 	queryDelayMs := 100 // Default to 100ms
@@ -588,7 +710,7 @@ func getKtInstance(client bind.ContractBackend, ktAddr common.Address) (ktfunc.K
 	}
 
 	log.Debugf("KT instance created for contract: %s", ktAddr.Hex())
-	return instance, nil
+	return &ktfunc.Ktv2Wrapper{instance}, nil
 }
 
 func KeepRunning(cProps *ktfunc.ConnectionProps) {
@@ -598,6 +720,7 @@ func KeepRunning(cProps *ktfunc.ConnectionProps) {
 			log.Printf("Error in VoteAndReward: %v", err)
 		}
 
-		time.Sleep(ktfunc.TimeToWaitForBlocks)
+		log.Printf("Iteration complete. Sleeping for %d seconds", int(cProps.WaitDuration.Seconds()))
+		time.Sleep(time.Duration(cProps.WaitDuration))
 	}
 }

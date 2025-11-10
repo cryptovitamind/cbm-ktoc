@@ -27,8 +27,10 @@ type FeeInfo struct {
 // by filtering Voted and Rwd events and checking if the transaction was from the address.
 func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock, endBlock uint64) ([]uint64, error) {
 	uniqueBlocks := make(map[uint64]struct{})
-
-	chunkSize := uint64(50000) // Adjust based on node limits; safer than 500 for logs
+	chunkSize := uint64(cProps.ChunkSize)
+	if chunkSize == 0 {
+		return nil, fmt.Errorf("Chunk size cannot be zero. Set it using -chunkSize or CHUNK_SIZE env var")
+	}
 	for currentStart := startBlock; currentStart <= endBlock; currentStart += chunkSize {
 		currentEnd := currentStart + chunkSize - 1
 		if currentEnd > endBlock {
@@ -40,7 +42,6 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 			End:     &endPtr,
 			Context: context.Background(),
 		}
-
 		// Filter Voted events
 		log.Debugf("Querying Voted events for block range %d-%d", currentStart, currentEnd)
 		votedIter, err := cProps.Kt.FilterVoted(opts)
@@ -81,7 +82,6 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 			return nil, fmt.Errorf("error iterating Voted events: %v", err)
 		}
 		votedIter.Close()
-
 		// Filter Rwd events
 		log.Debugf("Querying Rwd events for block range %d-%d", currentStart, currentEnd)
 		rwdIter, err := cProps.Kt.FilterRwd(opts)
@@ -133,7 +133,6 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 		}
 		rwdIter.Close()
 	}
-
 	var blocks []uint64
 	for b := range uniqueBlocks {
 		blocks = append(blocks, b)
@@ -141,7 +140,6 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 	sort.Slice(blocks, func(i, j int) bool { return blocks[i] < blocks[j] })
 	return blocks, nil
 }
-
 func GetOCFeesOwed(cProps *ConnectionProps, startEndBlocks string) (*big.Float, error) {
 	log.Printf("Querying OC fees owed to wallet %s for blocks %s", cProps.MyPubKey, startEndBlocks)
 	// Parse start and end blocks from string
@@ -225,113 +223,45 @@ func ParseStartEndBlocks(startEndBlocks string) (uint64, uint64, error) {
 	}
 	return uint64(start), uint64(end), nil
 }
-
 func WithdrawOCFees(cProps *ConnectionProps, blocks string) error {
-	log.Printf("Withdrawing OC fees for blocks: %s", blocks)
+	log.Printf("Withdrawing OC fees")
 	// Print initial contract balance
 	PrintKtBalance(cProps)
 	// Get caller address
 	caller := ToAddr(cProps.Addresses.MyPublicKey)
 	PrintBalanceOfAddr(cProps, cProps.MyPubKey)
-	var blocksUint32 []uint32
-	var err error
-	if blocks == "" {
-		// Auto-discover unpaid blocks
-		latest, err := cProps.Client.BlockNumber(context.Background())
-		if err != nil {
-			return fmt.Errorf("failed to get latest block: %v", err)
-		}
-		epochBlocks, err := GetOwedEpochBlocks(cProps, caller, 0, latest)
-		if err != nil {
-			return fmt.Errorf("failed to get owed epoch blocks: %v", err)
-		}
-		log.Debugf("Found %d potential epoch blocks", len(epochBlocks))
-		// Open DB for checking fees
-		db, err := openFeesDB(cProps)
-		if err != nil {
-			return err
-		}
-		var unpaid []uint64
-		for _, b := range epochBlocks {
-			fee, err := getOcFee(db, cProps, caller, b)
-			if err != nil {
-				log.Warnf("Failed to check fee for block %d: %v", b, err)
-				continue
-			}
-			if fee.Cmp(big.NewInt(0)) > 0 {
-				unpaid = append(unpaid, b)
-			}
-		}
-		sort.Slice(unpaid, func(i, j int) bool { return unpaid[i] < unpaid[j] })
-		for _, b := range unpaid {
-			blocksUint32 = append(blocksUint32, uint32(b))
-		}
-		log.Printf("Auto-discovered %d unpaid blocks: %v", len(blocksUint32), blocksUint32)
-		db.Close()
-	} else {
-		// Parse provided blocks
-		blocksUint32, err = parseWithdrawBlocks(blocks)
-		if err != nil {
-			log.Fatalf("invalid block format: %v", err)
-			return fmt.Errorf("invalid block format: %v", err)
-		}
-		log.Printf("Parsed blocks: %v", blocksUint32)
-	}
-
-	log.Debugf("Get caller's balance before withdrawal")
-	balanceBefore, err := cProps.Client.BalanceAt(context.Background(), caller, nil)
-	if err != nil {
-		return fmt.Errorf("failed to get caller's balance before withdrawal: %v", err)
-	}
-	// Open DB once (if not already for auto)
-	log.Debugf("Preparing to withdraw fees for %d blocks", len(blocksUint32))
+	// Open DB
 	db, err := openFeesDB(cProps)
 	if err != nil {
 		return err
 	}
-	log.Debug("Opened fees DB")
 	defer db.Close()
-	// Check fees owed for these blocks (optional, for debugging)
-	log.Printf("Verifying fees owed for %d blocks before withdrawal...", len(blocksUint32))
-	totalFeesOwed := big.NewInt(0)
-	numBlocks := len(blocksUint32)
-	processed := 0
-	progressInterval := 100
-	if numBlocks < progressInterval {
-		progressInterval = 0 // No progress for small number of blocks
-	}
-	if progressInterval > 0 {
-		fmt.Printf("Checking fees for %d blocks...", numBlocks)
-	}
-	for _, block := range blocksUint32 {
-		fee, err := getOcFee(db, cProps, caller, uint64(block))
-		if err != nil {
-			log.Warnf("Failed to query ocFees for block %d: %v", block, err)
-			continue
-		}
-		totalFeesOwed.Add(totalFeesOwed, fee)
-		processed++
-		if progressInterval > 0 && processed%progressInterval == 0 {
-			fmt.Printf("\rChecking fees: %d / %d blocks", processed, numBlocks)
-		}
-	}
-	if progressInterval > 0 {
-		fmt.Printf("\rChecking fees: %d / %d blocks\n", numBlocks, numBlocks)
+	log.Debug("Opened fees DB")
+	// Get total owed from contract (pastOcFees)
+	callOpts := &bind.CallOpts{Context: context.Background()}
+	totalFeesOwed, err := cProps.Kt.PastOcFees(callOpts, caller)
+	if err != nil {
+		return fmt.Errorf("failed to query pastOcFees: %v", err)
 	}
 	weiToEthOwed := new(big.Float).SetInt(totalFeesOwed)
 	owedEth := new(big.Float).Quo(weiToEthOwed, big.NewFloat(1e18))
-	log.Printf("Total fees owed for blocks: %.6f ETH", owedEth)
+	log.Printf("Total fees owed: %.6f ETH", owedEth)
 	if owedEth.Cmp(big.NewFloat(0)) <= 0 {
-		log.Infof("No fees owed for blocks: %v", blocks)
+		log.Infof("No fees owed")
 		return nil
+	}
+	// Get caller's balance before withdrawal
+	balanceBefore, err := cProps.Client.BalanceAt(context.Background(), caller, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get caller's balance before withdrawal: %v", err)
 	}
 	// Create an authenticated transactor
 	auth, err := NewTransactor(cProps)
 	if err != nil {
 		return fmt.Errorf("failed to create transactor: %v", err)
 	}
-	// Call the withdrawOCFee function
-	tx, err := cProps.Kt.WithdrawOCFee(auth, blocksUint32)
+	// Call the withdrawOCFee function (no args)
+	tx, err := cProps.Kt.WithdrawOCFee(auth)
 	if err != nil {
 		return fmt.Errorf("failed to call withdrawOCFee: %v", err)
 	}
@@ -347,10 +277,27 @@ func WithdrawOCFees(cProps *ConnectionProps, blocks string) error {
 	if err != nil {
 		return fmt.Errorf("failed to wait for additional blocks: %v", err)
 	}
-	// Update cache to set fees to 0 for withdrawn blocks
-	err = updateOcFeesToZero(db, caller, blocksUint32)
-	if err != nil {
-		log.Warnf("Failed to update cache after withdrawal: %v", err)
+	// Update cache: Since aggregated, we can skip per-block updates or clear relevant cache entries if needed
+	// For simplicity, assuming cache is per-block, we can discover and zero them post-withdrawal
+	if blocks == "" || blocks == "auto" {
+		latest, err := cProps.Client.BlockNumber(context.Background())
+		if err != nil {
+			log.Warnf("Failed to get latest block for cache update: %v", err)
+		} else {
+			epochBlocks, err := GetOwedEpochBlocks(cProps, caller, 0, latest)
+			if err != nil {
+				log.Warnf("Failed to get owed epoch blocks for cache update: %v", err)
+			} else {
+				var blocksUint32 []uint32
+				for _, b := range epochBlocks {
+					blocksUint32 = append(blocksUint32, uint32(b))
+				}
+				err = updateOcFeesToZero(db, caller, blocksUint32)
+				if err != nil {
+					log.Warnf("Failed to update cache after withdrawal: %v", err)
+				}
+			}
+		}
 	}
 	// Get caller's balance after withdrawal
 	balanceAfter, err := cProps.Client.BalanceAt(context.Background(), caller, nil)
@@ -371,8 +318,11 @@ func WithdrawOCFees(cProps *ConnectionProps, blocks string) error {
 	weiToEthGas := new(big.Float).SetInt(gasCost)
 	gasEth := new(big.Float).Quo(weiToEthGas, big.NewFloat(1e18))
 	// Log the result
-	log.Printf("OC fees withdrawn successfully for %d blocks | Amount received: %.6f ETH | Gas cost: %.6f ETH | Balance before: %.6f ETH | Balance after: %.6f ETH",
-		len(blocksUint32), withdrawnEth, gasEth, balanceBeforeEth, balanceAfterEth)
+	log.Printf("OC fees withdrawn successfully | Amount received: %.6f ETH | Gas cost: %.6f ETH | Balance before: %.6f ETH | Balance after: %.6f ETH",
+		withdrawnEth, gasEth, balanceBeforeEth, balanceAfterEth)
+	if withdrawnEth.Cmp(owedEth) < 0 {
+		log.Warnf("Withdrawn amount %.6f ETH is less than owed amount %.6f ETH.", withdrawnEth, owedEth)
+	}
 	// Print final balances
 	PrintKtBalance(cProps)
 	PrintBalanceOfAddr(cProps, cProps.MyPubKey)
@@ -509,5 +459,69 @@ func updateOcFeesToZero(db *bbolt.DB, addr common.Address, blocks []uint32) erro
 		log.Errorf("Failed to update cache to zero: %v", err)
 		return err
 	}
+	return nil
+}
+
+// SetOCFee sets the OC fee on the contract.
+func SetOCFee(cProps *ConnectionProps, fee uint16) error {
+	log.Printf("Setting OC fee to %d", fee)
+
+	// Print initial contract balance
+	PrintKtBalance(cProps)
+
+	// Get caller address
+	caller := ToAddr(cProps.Addresses.MyPublicKey)
+	PrintBalanceOfAddr(cProps, cProps.MyPubKey)
+
+	// Create an authenticated transactor
+	auth, err := NewTransactor(cProps)
+	if err != nil {
+		return fmt.Errorf("failed to create transactor: %v", err)
+	}
+
+	// Call the setOCFee function
+	tx, err := cProps.Kt.SetOCFee(auth, fee)
+	if err != nil {
+		return fmt.Errorf("failed to call setOCFee: %v", err)
+	}
+
+	log.Printf("SetOCFee transaction sent: %s", tx.Hash().Hex())
+
+	// Wait for the transaction to be mined
+	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	if err != nil {
+		return fmt.Errorf("failed to wait for setOCFee transaction to be mined: %v", err)
+	}
+
+	log.Debugf("SetOCFee transaction mined in block: %d", receipt.BlockNumber.Uint64())
+
+	// Wait for additional blocks
+	err = WaitForBlocks(cProps)
+	if err != nil {
+		return fmt.Errorf("failed to wait for additional blocks: %v", err)
+	}
+
+	// Get caller's balance after transaction
+	balanceAfter, err := cProps.Client.BalanceAt(context.Background(), caller, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get caller's balance after setOCFee: %v", err)
+	}
+
+	// Log gas cost
+	gasCost := new(big.Int).Mul(tx.GasPrice(), big.NewInt(int64(receipt.GasUsed)))
+	weiToEthGas := new(big.Float).SetInt(gasCost)
+	gasEth := new(big.Float).Quo(weiToEthGas, big.NewFloat(1e18))
+
+	// Convert balance to ETH
+	weiToEthAfter := new(big.Float).SetInt(balanceAfter)
+	balanceAfterEth := new(big.Float).Quo(weiToEthAfter, big.NewFloat(1e18))
+
+	// Log the result
+	log.Printf("OC fee set successfully to %d | Gas cost: %.6f ETH | Balance after: %.6f ETH", fee, gasEth, balanceAfterEth)
+
+	// Print final balances
+	PrintKtBalance(cProps)
+	PrintBalanceOfAddr(cProps, cProps.MyPubKey)
+
 	return nil
 }
