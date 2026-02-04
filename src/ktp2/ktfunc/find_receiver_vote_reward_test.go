@@ -236,6 +236,7 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 
 	mockKt.On("FilterStaked", mock.Anything).Return(stakedIter, nil)
 	mockKt.On("FilterWithdrew", mock.Anything).Return(emptyWithdrewIter, nil)
+	mockKt.On("Declines", mock.Anything, stakerAddr).Return(false, nil)
 
 	// Winner will be stakerAddr, vote for it
 	voteData := nextHeader.Hash().Hex()

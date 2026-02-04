@@ -43,6 +43,8 @@ type ChunkEvents struct {
 // Define as a variable holding a function
 var calcWinningWallet = defaultCalculateWinningWallet
 
+var GatherStakesAndWithdraws = realGatherStakesAndWithdraws
+
 // Exported for testing purposes if needed
 func SetCalculateWinningWallet(f func(map[common.Address]*UserStakeData, common.Hash) (common.Address, error)) {
 	calcWinningWallet = f
@@ -128,6 +130,18 @@ func VoteAndReward(cProps *ConnectionProps) error {
 
 	// Print minimum stakes
 	printAllStakes(stakeDataMinsMap)
+
+	// Filter out declined stakers
+	if err := filterDeclinedStakers(stakeDataMinsMap, cProps); err != nil {
+		log.Errorf("Failed to filter declined stakers: %v", err)
+		return fmt.Errorf("failed to filter declined stakers: %w", err)
+	}
+
+	// Recalculate totalMin after filtering
+	totalMin = big.NewInt(0)
+	for _, data := range stakeDataMinsMap {
+		totalMin.Add(totalMin, data.StakeAmount)
+	}
 
 	// Calculate probabilities for each wallet
 	calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
@@ -382,6 +396,20 @@ func defaultCalculateWinningWallet(
 
 	log.Info("No valid addresses available - Returning dead address")
 	return common.Address{}, nil
+}
+
+func filterDeclinedStakers(stakeDataMinsMap map[common.Address]*UserStakeData, cProps *ConnectionProps) error {
+	for addr := range stakeDataMinsMap {
+		declined, err := cProps.Kt.Declines(&bind.CallOpts{}, addr)
+		if err != nil {
+			return fmt.Errorf("failed to check declines for %s: %w", addr.Hex(), err)
+		}
+		if declined {
+			delete(stakeDataMinsMap, addr)
+			log.Debugf("Filtered out declined staker: %s", addr.Hex())
+		}
+	}
+	return nil
 }
 
 func calculateProbsForEachWallet(stakeDataMinsMap map[common.Address]*UserStakeData, totalMin *big.Int) bool {
@@ -657,7 +685,7 @@ func debugRawLogs(cProps *ConnectionProps, start, end uint64) {
 
 // GatherStakesAndWithdraws collects stake and withdrawal events for a KT contract from block startBlock to endBlock.
 // Returns a map of address to block-specific stake data or an error if filtering fails.
-func GatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, startBlock *big.Int, endBlock *big.Int) (map[common.Address]map[uint64]*UserStakeData, error) {
+func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, startBlock *big.Int, endBlock *big.Int) (map[common.Address]map[uint64]*UserStakeData, error) {
 	log.Debugf("Gathering stakes and withdrawals")
 	// Validate inputs
 	if kt == nil {

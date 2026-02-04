@@ -86,6 +86,7 @@ type Ktv2Interface interface {
 	FilterVoted(opts *bind.FilterOpts) (*ktv2.Ktv2VotedIterator, error)
 
 	OcRwdrs(opts *bind.CallOpts, address common.Address) (bool, error)
+	Declines(opts *bind.CallOpts, address common.Address) (bool, error)
 	HasVotedAdd(opts *bind.CallOpts, voter common.Address, target common.Address) (bool, error)
 	HasVotedRemove(opts *bind.CallOpts, voter common.Address, target common.Address) (bool, error)
 	Owner(opts *bind.CallOpts) (common.Address, error)

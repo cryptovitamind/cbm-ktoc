@@ -71,6 +71,9 @@ func (m *MockKtv2) Rwd(opts *bind.TransactOpts, recipient common.Address, amount
 // BlockRwd mock
 func (m *MockKtv2) BlockRwd(opts *bind.CallOpts, blockNumber *big.Int, recipient common.Address) (uint16, error) {
 	args := m.Called(opts, blockNumber, recipient)
+	if fn, ok := args.Get(0).(func(mock.Arguments) uint16); ok {
+		return fn(args), args.Error(1)
+	}
 	return args.Get(0).(uint16), args.Error(1)
 }
 
@@ -232,6 +235,12 @@ func (m *MockKtv2) HasVotedRemove(opts *bind.CallOpts, voter common.Address, oc 
 func (m *MockKtv2) Owner(opts *bind.CallOpts) (common.Address, error) {
 	args := m.Called(opts)
 	return args.Get(0).(common.Address), args.Error(1)
+}
+
+// Declines mock
+func (m *MockKtv2) Declines(opts *bind.CallOpts, address common.Address) (bool, error) {
+	args := m.Called(opts, address)
+	return args.Bool(0), args.Error(1)
 }
 
 // MockEthClient for ethclient
