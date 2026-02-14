@@ -78,9 +78,15 @@ type Flags struct {
 }
 
 func main() {
+	flags := parseFlags()
+
+	if flags.help || flag.NFlag() == 0 {
+		flag.Usage()
+		os.Exit(0)
+	}
+
 	mProps := loadMasterProperties()
 	displayStartupBanner()
-	flags := parseFlags()
 	cProps := setupConnectionProps(&mProps, flags)
 
 	if flags.continuous {
@@ -128,7 +134,7 @@ func displayStartupBanner() {
 	fmt.Print("──────────────────────────────────────────────────────────────────────────────────────────\n")
 	fmt.Print("\n")
 	figure.NewColorFigure("KTOC", "larry3d", "red", true).Print()
-	figure.NewColorFigure("v0.3-beta", "larry3d", "red", true).Print()
+	figure.NewColorFigure("v0.4-beta", "larry3d", "red", true).Print()
 	fmt.Print("\n")
 	figure.NewColorFigure("shinatoken", "binary", "red", true).Print()
 	fmt.Print("\n")
@@ -197,7 +203,7 @@ func parseFlags() Flags {
 
 	// Custom usage message with guides
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "\n🌟 Welcome to KT v0.3 (beta) - CLI 🌟\n")
+		fmt.Fprintf(os.Stderr, "\n🌟 Welcome to KT v0.4 (beta) - CLI 🌟\n")
 		fmt.Fprintf(os.Stderr, "========================================================\n")
 		fmt.Fprintf(os.Stderr, "KT is an experimental blockchain tool. Use these flags to interact with KTv2 contracts.\n")
 		fmt.Fprintf(os.Stderr, "Set required environment variables (e.g., MY_PUBLIC_KEY, ETH_ENDPOINT) in a .env file.\n")
@@ -282,11 +288,6 @@ func parseFlags() Flags {
 }
 
 func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
-	if flags.help || flag.NFlag() == 0 {
-		flag.Usage()
-		os.Exit(0)
-	}
-
 	if flags.verbose {
 		log.SetLevel(log.DebugLevel)
 	}
