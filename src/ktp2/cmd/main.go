@@ -74,6 +74,7 @@ type Flags struct {
 	printStakeEvents      string
 	currentBlock          bool
 	waitDuration          time.Duration
+	linearProbs           bool
 }
 
 func main() {
@@ -181,6 +182,8 @@ func parseFlags() Flags {
 	dataForOCVote := flag.String("dataForOCVote", "", "Data string for the OC vote (required if using voting flags)")
 	printOCVoteEvents := flag.String("printOCVoteEvents", "", "Print all OC vote events between <fromBlock>:<toBlock>")
 
+	linearProbs := flag.Bool("linearProbs", false, "Use linear probability normalization instead of log normalization (which skews towards smaller wallets).")
+
 	// Testing Commands (for development and testing)
 	continuous := flag.Bool("continuous", false, "TESTING: Run continuous operations in a loop, simulating various actions (e.g., staking, giving ETH). For development use only.")
 	giveAmount := flag.Float64("give", 0, "TESTING: Amount of ETH to distribute to test wallets (in ETH, e.g., 0.1). Requires -init or existing wallets.")
@@ -274,6 +277,7 @@ func parseFlags() Flags {
 		printOCVoteEvents:     *printOCVoteEvents,
 		dataForOCVote:         *dataForOCVote,
 		printStakeEvents:      *printStakeEvents,
+		linearProbs:           *linearProbs,
 	}
 }
 
@@ -623,6 +627,7 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 	}
 
 	cProps.WaitDuration = duration
+	cProps.UseLinearProbs = flags.linearProbs
 
 	// Set QueryDelay from environment variable or default to 100ms
 	queryDelayMs := 100 // Default to 100ms

@@ -11,10 +11,10 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// PrintEvents reads and prints the contents of the events database for debugging purposes.
-// It uses the provided contract address to determine the database file name.
+// PrintEvents reads and prints the contents of the events database for debugging purposes. 📊🔍
+// It uses the provided contract address to determine the database file name. 🏷️
 func PrintEvents(contractAddr common.Address) error {
-	// Ensure cache directory exists
+	// Ensure cache directory exists 💾
 	cacheDir := "cache"
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return fmt.Errorf("failed to create cache directory: %v", err)
@@ -30,8 +30,8 @@ func PrintEvents(contractAddr common.Address) error {
 	}
 	defer db.Close()
 
-	// Print header
-	fmt.Println("Database Contents:")
+	// Print header 📋
+	fmt.Println("Database Contents: 📚")
 	fmt.Println("------------------")
 
 	// Iterate over all buckets and keys
@@ -42,7 +42,7 @@ func PrintEvents(contractAddr common.Address) error {
 			return nil
 		}
 
-		fmt.Println("Bucket: chunks")
+		fmt.Println("Bucket: chunks 📦")
 		return bucket.ForEach(func(k, v []byte) error {
 			var chunk ChunkEvents
 			err := gob.NewDecoder(bytes.NewReader(v)).Decode(&chunk)
@@ -53,25 +53,25 @@ func PrintEvents(contractAddr common.Address) error {
 
 			fmt.Printf("  Chunk starting at block: %d\n", binary.BigEndian.Uint64(k))
 			if len(chunk.StakeEvents) > 0 {
-				fmt.Println("    Stake Events:")
+				fmt.Println("    Stake Events: 💰")
 				fmt.Println("      Address                                      | Amount (Wei)          | Block")
 				fmt.Println("      ---------------------------------------------|-----------------------|-------")
 				for _, event := range chunk.StakeEvents {
 					fmt.Printf("      %s | %23s | %d\n", event.Addr.Hex(), event.Amount.String(), event.Block)
 				}
 			} else {
-				fmt.Println("    No Stake Events in this chunk.")
+				fmt.Println("    No Stake Events in this chunk. 😔")
 			}
 
 			if len(chunk.WithdrawEvents) > 0 {
-				fmt.Println("    Withdraw Events:")
+				fmt.Println("    Withdraw Events: 💸")
 				fmt.Println("      Address                                      | Amount (Wei)          | Block")
 				fmt.Println("      ---------------------------------------------|-----------------------|-------")
 				for _, event := range chunk.WithdrawEvents {
 					fmt.Printf("      %s | %23s | %d\n", event.Addr.Hex(), event.Amount.String(), event.Block)
 				}
 			} else {
-				fmt.Println("    No Withdraw Events in this chunk.")
+				fmt.Println("    No Withdraw Events in this chunk. 🚫")
 			}
 			return nil
 		})
@@ -80,6 +80,6 @@ func PrintEvents(contractAddr common.Address) error {
 		return fmt.Errorf("failed to iterate over database contents: %v", err)
 	}
 
-	fmt.Println("------------------")
+	fmt.Println("------------------ 🎉")
 	return nil
 }

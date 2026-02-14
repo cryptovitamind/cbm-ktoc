@@ -94,21 +94,22 @@ type Ktv2Interface interface {
 
 // ConnectionProps holds Ethereum connection properties and contract instances.
 type ConnectionProps struct {
-	ChainID      *big.Int             // Blockchain chain ID
-	Client       EthClient            // Ethereum client connection
-	Backend      bind.ContractBackend // Contract backend for KT contract
-	MyPubKey     common.Address       // User's public address
-	MyPrivateKey *ecdsa.PrivateKey    // User's private key (for testing only)
-	Addresses    *Addresses           // Contract and wallet addresses
-	KtAddr       common.Address       // KT contract address
-	KtBlock      *big.Int             // Start block number for KT contract
-	Kt           Ktv2Interface        // KT contract instance
-	GasLimit     uint64               // Gas limit for transactions
-	BlocksToWait uint64               // Number of blocks to wait for transactions to confirm
-	QueryDelay   time.Duration        // Delay between API queries in milliseconds to prevent rate limiting
-	V2Uniswap    bool                 // If true, use Uniswap V2, else V1.
-	ChunkSize    int                  // Size of chunks for processing large data sets
-	WaitDuration time.Duration        // Duration to wait between operations
+	ChainID        *big.Int             // Blockchain chain ID
+	Client         EthClient            // Ethereum client connection
+	Backend        bind.ContractBackend // Contract backend for KT contract
+	MyPubKey       common.Address       // User's public address
+	MyPrivateKey   *ecdsa.PrivateKey    // User's private key (for testing only)
+	Addresses      *Addresses           // Contract and wallet addresses
+	KtAddr         common.Address       // KT contract address
+	KtBlock        *big.Int             // Start block number for KT contract
+	Kt             Ktv2Interface        // KT contract instance
+	GasLimit       uint64               // Gas limit for transactions
+	BlocksToWait   uint64               // Number of blocks to wait for transactions to confirm
+	QueryDelay     time.Duration        // Delay between API queries in milliseconds to prevent rate limiting
+	V2Uniswap      bool                 // If true, use Uniswap V2, else V1.
+	ChunkSize      int                  // Size of chunks for processing large data sets
+	WaitDuration   time.Duration        // Duration to wait between operations
+	UseLinearProbs bool                 // If true, use linear probability normalization; otherwise, use log normalization (default: log)
 }
 
 // Addresses holds Ethereum addresses and private keys from environment variables.
