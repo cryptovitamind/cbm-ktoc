@@ -563,6 +563,19 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address, totalMi
 		return fmt.Errorf("failed to get contract balance: %v", err)
 	}
 
+	// Get total OC fees owed to subtract from reward amount
+	callOpts := &bind.CallOpts{Context: context.Background()}
+	tlOcFees, err := cProps.Kt.TlOcFees(callOpts)
+	if err != nil {
+		return fmt.Errorf("failed to get total OC fees: %v", err)
+	}
+
+	// Calculate reward amount as balance minus OC fees, set to 0 if negative
+	rewardAmount = new(big.Int).Sub(rewardAmount, tlOcFees)
+	if rewardAmount.Sign() < 0 {
+		rewardAmount = big.NewInt(0)
+	}
+
 	if totalMin.Cmp(big.NewInt(0)) == 0 {
 		rewardAmount = big.NewInt(0)
 		log.Warn("No stakes - rewarding zero amount to prevent unintended transfer.")

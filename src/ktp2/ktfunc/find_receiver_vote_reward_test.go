@@ -247,6 +247,9 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 	mockKt.On("BlockRwd", mock.Anything, startBlock, stakerAddr).Return(uint16(5), nil)
 	mockKt.On("ConsensusReq", mock.Anything).Return(uint16(3), nil)
 
+	// Mock tlOcFees for reward calculation (assuming no OC fees in this test)
+	mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil)
+
 	// Mock reward
 	rewardAmount := big.NewInt(1000000000000000000) // 1 ETH
 	rewardTx := types.NewTransaction(0, stakerAddr, rewardAmount, 0, big.NewInt(0), []byte{})
@@ -321,6 +324,114 @@ func TestVoteAndReward_StartBlockError(t *testing.T) {
 	err := VoteAndReward(cProps)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get start block")
+
+	mockClient.AssertExpectations(t)
+	mockKt.AssertExpectations(t)
+}
+
+// TestRewardWinningWallet_OCFeesSubtraction tests that reward amount is correctly calculated as balance - tlOcFees.
+func TestRewardWinningWallet_OCFeesSubtraction(t *testing.T) {
+	logrus.SetLevel(logrus.FatalLevel)
+
+	mockClient := &MockEthClient{}
+	mockKt := &MockKtv2{}
+	cProps := &ConnectionProps{
+		Client:       mockClient,
+		Kt:           mockKt,
+		KtAddr:       common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:     common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
+		ChainID:      big.NewInt(1),
+		BlocksToWait: 0,
+	}
+
+	privateKey, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
+	cProps.MyPrivateKey = privateKey
+
+	winner := common.HexToAddress("0xabc123456789012345678901234567890123456")
+	totalMin := big.NewInt(1000) // Non-zero to avoid zero reward
+
+	// Mock contract balance: 2 ETH
+	contractBalance := big.NewInt(2000000000000000000) // 2 ETH in wei
+	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(contractBalance, nil)
+
+	// Mock tlOcFees: 0.5 ETH
+	tlOcFees := big.NewInt(500000000000000000) // 0.5 ETH in wei
+	mockKt.On("TlOcFees", mock.Anything).Return(tlOcFees, nil)
+
+	// Expected reward amount: 2 ETH - 0.5 ETH = 1.5 ETH
+	expectedRewardAmount := big.NewInt(1500000000000000000) // 1.5 ETH in wei
+	rewardTx := types.NewTransaction(0, winner, expectedRewardAmount, 0, big.NewInt(0), []byte{})
+	mockKt.On("Rwd", mock.Anything, winner, expectedRewardAmount).Return(rewardTx, nil)
+
+	// Mock winner's balance before and after
+	beforeBalance := big.NewInt(1000000000000000000)                                                     // 1 ETH
+	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).Return(beforeBalance, nil).Once() // Before reward
+	afterBalance := new(big.Int).Add(beforeBalance, expectedRewardAmount)
+	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).Return(afterBalance, nil).Once() // After reward
+
+	// Mock BlockNumber for WaitForBlocks
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(110), nil).Maybe()
+
+	// Mock transaction receipt
+	successReceipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, BlockNumber: big.NewInt(112)}
+	mockClient.On("TransactionReceipt", mock.Anything, mock.Anything).Return(successReceipt, nil)
+
+	err := rewardWinningWallet(cProps, winner, totalMin)
+	assert.NoError(t, err)
+
+	mockClient.AssertExpectations(t)
+	mockKt.AssertExpectations(t)
+}
+
+// TestRewardWinningWallet_OCFeesExceedBalance tests that reward amount is set to 0 when tlOcFees >= balance.
+func TestRewardWinningWallet_OCFeesExceedBalance(t *testing.T) {
+	logrus.SetLevel(logrus.FatalLevel)
+
+	mockClient := &MockEthClient{}
+	mockKt := &MockKtv2{}
+	cProps := &ConnectionProps{
+		Client:       mockClient,
+		Kt:           mockKt,
+		KtAddr:       common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:     common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
+		ChainID:      big.NewInt(1),
+		BlocksToWait: 0,
+	}
+
+	privateKey, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
+	cProps.MyPrivateKey = privateKey
+
+	winner := common.HexToAddress("0xabc123456789012345678901234567890123456")
+	totalMin := big.NewInt(1000) // Non-zero to avoid zero reward
+
+	// Mock contract balance: 0.5 ETH
+	contractBalance := big.NewInt(500000000000000000) // 0.5 ETH in wei
+	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(contractBalance, nil)
+
+	// Mock tlOcFees: 1 ETH (exceeds balance)
+	tlOcFees := big.NewInt(1000000000000000000) // 1 ETH in wei
+	mockKt.On("TlOcFees", mock.Anything).Return(tlOcFees, nil)
+
+	// Expected reward amount: 0 (since balance < tlOcFees)
+	expectedRewardAmount := big.NewInt(0)
+	rewardTx := types.NewTransaction(0, winner, expectedRewardAmount, 0, big.NewInt(0), []byte{})
+	mockKt.On("Rwd", mock.Anything, winner, expectedRewardAmount).Return(rewardTx, nil)
+
+	// Mock winner's balance before and after (no change since reward is 0)
+	beforeBalance := big.NewInt(1000000000000000000)                                                     // 1 ETH
+	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).Return(beforeBalance, nil).Once() // Before reward
+	afterBalance := new(big.Int).Add(beforeBalance, expectedRewardAmount)                                // Still 1 ETH
+	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).Return(afterBalance, nil).Once()  // After reward
+
+	// Mock BlockNumber for WaitForBlocks (not called since BlocksToWait=0, but added for consistency)
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(110), nil).Maybe()
+
+	// Mock transaction receipt
+	successReceipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, BlockNumber: big.NewInt(112)}
+	mockClient.On("TransactionReceipt", mock.Anything, mock.Anything).Return(successReceipt, nil)
+
+	err := rewardWinningWallet(cProps, winner, totalMin)
+	assert.NoError(t, err)
 
 	mockClient.AssertExpectations(t)
 	mockKt.AssertExpectations(t)

@@ -82,6 +82,10 @@ func TestMultiVoterConsensus(t *testing.T) {
 			mockKt.On("EpochInterval", mock.Anything).Return(epochInterval, nil)
 			mockKt.On("ConsensusReq", mock.Anything).Return(consensusReq, nil)
 			mockKt.On("Declines", mock.Anything, mock.Anything).Return(false, nil)
+			mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil).Maybe() // No OC fees for reward calculation
+			mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil).Maybe() // No OC fees for reward calculation
+			mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil).Maybe() // No OC fees for reward calculation
+			mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil).Maybe() // No OC fees for reward calculation
 
 			goodVotes := 0
 			dummyTx := types.NewTransaction(0, common.Address{}, big.NewInt(0), 21000, big.NewInt(20000000000), nil)
@@ -171,6 +175,7 @@ func TestImproperVoterOverruled(t *testing.T) {
 	mockKt.On("EpochInterval", mock.Anything).Return(epochInterval, nil)
 	mockKt.On("ConsensusReq", mock.Anything).Return(consensusReq, nil)
 	mockKt.On("Declines", mock.Anything, mock.Anything).Return(false, nil)
+	mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil) // No OC fees for reward calculation
 	// Dynamic for winner
 	mockKt.On("BlockRwd", mock.Anything, epochStart, winner).Return(
 		func(args mock.Arguments) uint16 {
