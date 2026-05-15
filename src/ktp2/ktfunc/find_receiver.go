@@ -400,10 +400,18 @@ func defaultCalculateWinningWallet(
 }
 
 func filterDeclinedStakers(stakeDataMinsMap map[common.Address]*UserStakeData, cProps *ConnectionProps) error {
+	if cProps.DeclinesCache == nil {
+		cProps.DeclinesCache = make(map[common.Address]bool)
+	}
 	for addr := range stakeDataMinsMap {
-		declined, err := cProps.Kt.Declines(&bind.CallOpts{}, addr)
-		if err != nil {
-			return fmt.Errorf("failed to check declines for %s: %w", addr.Hex(), err)
+		declined, cached := cProps.DeclinesCache[addr]
+		if !cached {
+			var err error
+			declined, err = cProps.Kt.Declines(&bind.CallOpts{}, addr)
+			if err != nil {
+				return fmt.Errorf("failed to check declines for %s: %w", addr.Hex(), err)
+			}
+			cProps.DeclinesCache[addr] = declined
 		}
 		if declined {
 			delete(stakeDataMinsMap, addr)
@@ -793,14 +801,23 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 	defer db.Close()
-	// Create bucket
+	// Buckets:
+	//   chunks — key = 8-byte BE chunkStart, value = gob ChunkEvents
+	//   meta   — key "tip" = 8-byte BE highest contiguously-processed block
+	// Chunk endings are NOT in the key. A chunk for chunkStart contains all
+	// events from [chunkStart, min(chunkStart+chunkSize-1, tip)]. When a new
+	// call extends past the prior tip into the chunk, we fetch only the
+	// uncovered tail and merge it into the existing chunk.
 	err = db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte("chunks"))
+		if _, err := tx.CreateBucketIfNotExists([]byte("chunks")); err != nil {
+			return err
+		}
+		_, err := tx.CreateBucketIfNotExists([]byte("meta"))
 		return err
 	})
 	if err != nil {
-		log.Errorf("Failed to create bucket: %v", err)
-		return nil, fmt.Errorf("failed to create bucket: %w", err)
+		log.Errorf("Failed to create buckets: %v", err)
+		return nil, fmt.Errorf("failed to create buckets: %w", err)
 	}
 	chunkSize := uint64(cProps.ChunkSize)
 	if chunkSize == 0 {
@@ -809,77 +826,145 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 
 	startU := startBlock.Uint64()
 	endU := endBlock.Uint64()
-	var stakeEvents []StakeEvent
-	var withdrawEvents []WithdrawEvent
-	for currentStart := startU; currentStart <= endU; currentStart += chunkSize {
-		currentEnd := currentStart + chunkSize - 1
-		if currentEnd > endU {
-			currentEnd = endU
-		}
 
-		key := make([]byte, 16)
-		binary.BigEndian.PutUint64(key, currentStart)
-		binary.BigEndian.PutUint64(key[8:], currentEnd)
-
-		var chunk ChunkEvents
-		var cached bool
-		err = db.View(func(tx *bbolt.Tx) error {
-			b := tx.Bucket([]byte("chunks"))
-			v := b.Get(key)
-			if v == nil {
-				return nil // No error, but not cached
+	// Read tip.
+	var tip uint64
+	_ = db.View(func(tx *bbolt.Tx) error {
+		if b := tx.Bucket([]byte("meta")); b != nil {
+			if v := b.Get([]byte("tip")); len(v) == 8 {
+				tip = binary.BigEndian.Uint64(v)
 			}
-			decErr := gob.NewDecoder(bytes.NewReader(v)).Decode(&chunk)
-			if decErr != nil {
+		}
+		return nil
+	})
+	log.Debugf("Cache tip on entry: %d", tip)
+
+	chunkKey := func(chunkStart uint64) []byte {
+		k := make([]byte, 8)
+		binary.BigEndian.PutUint64(k, chunkStart)
+		return k
+	}
+	loadChunk := func(chunkStart uint64) (ChunkEvents, bool, error) {
+		var chunk ChunkEvents
+		var found bool
+		err := db.View(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte("chunks"))
+			v := b.Get(chunkKey(chunkStart))
+			if v == nil {
+				return nil
+			}
+			if decErr := gob.NewDecoder(bytes.NewReader(v)).Decode(&chunk); decErr != nil {
 				return decErr
 			}
-			cached = true
+			found = true
 			return nil
 		})
-		if err != nil {
-			log.Warnf("Failed to load cached chunk %d-%d: %v - Deleting bad cache entry", currentStart, currentEnd, err)
-			// Delete bad key to avoid repeated failures
-			db.Update(func(tx *bbolt.Tx) error {
-				b := tx.Bucket([]byte("chunks"))
-				return b.Delete(key)
-			})
+		return chunk, found, err
+	}
+	storeChunk := func(chunkStart uint64, chunk ChunkEvents) error {
+		return db.Update(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte("chunks"))
+			var buf bytes.Buffer
+			if err := gob.NewEncoder(&buf).Encode(chunk); err != nil {
+				return err
+			}
+			return b.Put(chunkKey(chunkStart), buf.Bytes())
+		})
+	}
+	advanceTip := func(newTip uint64) error {
+		if newTip <= tip {
+			return nil
 		}
-		if cached {
-			log.Infof("Loaded cached chunk %d-%d: %d stakes, %d withdraws", currentStart, currentEnd, len(chunk.StakeEvents), len(chunk.WithdrawEvents))
-			stakeEvents = append(stakeEvents, chunk.StakeEvents...)
-			withdrawEvents = append(withdrawEvents, chunk.WithdrawEvents...)
-			continue
+		err := db.Update(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte("meta"))
+			buf := make([]byte, 8)
+			binary.BigEndian.PutUint64(buf, newTip)
+			return b.Put([]byte("tip"), buf)
+		})
+		if err == nil {
+			tip = newTip
 		}
-		log.Infof("Querying chunk %d-%d (not cached)", currentStart, currentEnd)
-		// Query with rate limiting using user-configurable delay
+		return err
+	}
+
+	fetchAndStore := func(chunkStart, fetchStart, chunkEnd uint64, existing ChunkEvents) error {
 		if cProps.QueryDelay > 0 {
 			time.Sleep(cProps.QueryDelay)
 		}
-		// Wrap query in retry logic for large query errors
-		var chunkStake []StakeEvent
-		var chunkWithdraw []WithdrawEvent
-		err = queryChunkWithRetry(cProps, kt, currentStart, currentEnd, &chunkStake, &chunkWithdraw)
-		if err != nil {
-			return nil, err
+		var s []StakeEvent
+		var w []WithdrawEvent
+		if err := queryChunkWithRetry(cProps, kt, fetchStart, chunkEnd, &s, &w); err != nil {
+			return err
 		}
-		log.Infof("Found %d stakes and %d withdraws in chunk %d-%d", len(chunkStake), len(chunkWithdraw), currentStart, currentEnd)
-		// Store
-		err = db.Update(func(tx *bbolt.Tx) error {
-			b := tx.Bucket([]byte("chunks"))
-			var buf bytes.Buffer
-			if err := gob.NewEncoder(&buf).Encode(ChunkEvents{
-				StakeEvents:    chunkStake,
-				WithdrawEvents: chunkWithdraw,
-			}); err != nil {
-				return err
+		log.Infof("Fetched %d-%d: %d stakes, %d withdraws", fetchStart, chunkEnd, len(s), len(w))
+		merged := ChunkEvents{
+			StakeEvents:    append(existing.StakeEvents, s...),
+			WithdrawEvents: append(existing.WithdrawEvents, w...),
+		}
+		if err := storeChunk(chunkStart, merged); err != nil {
+			return fmt.Errorf("failed to store chunk %d: %w", chunkStart, err)
+		}
+		return advanceTip(chunkEnd)
+	}
+
+	var stakeEvents []StakeEvent
+	var withdrawEvents []WithdrawEvent
+	for chunkStart := startU; chunkStart <= endU; chunkStart += chunkSize {
+		chunkEnd := chunkStart + chunkSize - 1
+		if chunkEnd > endU {
+			chunkEnd = endU
+		}
+
+		switch {
+		case chunkEnd <= tip:
+			// Fully cached.
+			chunk, found, err := loadChunk(chunkStart)
+			if err != nil || !found {
+				if err != nil {
+					log.Warnf("Failed to load cached chunk %d (expected hit, tip=%d): %v - re-querying", chunkStart, tip, err)
+				} else {
+					log.Warnf("Missing cached chunk %d (expected hit, tip=%d) - re-querying", chunkStart, tip)
+				}
+				if err := fetchAndStore(chunkStart, chunkStart, chunkEnd, ChunkEvents{}); err != nil {
+					return nil, err
+				}
+				chunk, _, _ = loadChunk(chunkStart)
+			} else {
+				log.Infof("Cache HIT chunk %d (covers up to %d)", chunkStart, chunkEnd)
 			}
-			return b.Put(key, buf.Bytes())
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to store chunk %d-%d: %w", currentStart, currentEnd, err)
+			stakeEvents = append(stakeEvents, chunk.StakeEvents...)
+			withdrawEvents = append(withdrawEvents, chunk.WithdrawEvents...)
+
+		case chunkStart > tip:
+			// New chunk: fetch the whole requested range from scratch.
+			log.Infof("Fetching new chunk %d-%d (tip=%d)", chunkStart, chunkEnd, tip)
+			if err := fetchAndStore(chunkStart, chunkStart, chunkEnd, ChunkEvents{}); err != nil {
+				return nil, err
+			}
+			chunk, _, _ := loadChunk(chunkStart)
+			stakeEvents = append(stakeEvents, chunk.StakeEvents...)
+			withdrawEvents = append(withdrawEvents, chunk.WithdrawEvents...)
+
+		default:
+			// Partially cached: chunkStart ≤ tip < chunkEnd. Extend the chunk
+			// by fetching only the uncovered tail (tip+1, chunkEnd).
+			existing, found, err := loadChunk(chunkStart)
+			if err != nil || !found {
+				log.Warnf("Expected partial chunk %d in cache (tip=%d) but not found - re-fetching full chunk", chunkStart, tip)
+				existing = ChunkEvents{}
+				if err := fetchAndStore(chunkStart, chunkStart, chunkEnd, existing); err != nil {
+					return nil, err
+				}
+			} else {
+				log.Infof("Extending chunk %d: cached up to %d, fetching %d-%d", chunkStart, tip, tip+1, chunkEnd)
+				if err := fetchAndStore(chunkStart, tip+1, chunkEnd, existing); err != nil {
+					return nil, err
+				}
+			}
+			chunk, _, _ := loadChunk(chunkStart)
+			stakeEvents = append(stakeEvents, chunk.StakeEvents...)
+			withdrawEvents = append(withdrawEvents, chunk.WithdrawEvents...)
 		}
-		stakeEvents = append(stakeEvents, chunkStake...)
-		withdrawEvents = append(withdrawEvents, chunkWithdraw...)
 	}
 	// Build stakeDataMap
 	stakeDataMap := make(map[common.Address]map[uint64]*UserStakeData)
@@ -998,6 +1083,13 @@ func queryChunkWithRetry(cProps *ConnectionProps, kt Ktv2Interface, start, end u
 }
 
 func GetContractCreationBlock(cProps *ConnectionProps) (uint64, error) {
+	// The creation block never changes for a given contract. If we already
+	// resolved it (or the user provided it via KT_START_BLOCK), reuse it
+	// instead of re-running the binary search every epoch.
+	if cProps.KtBlock != nil && cProps.KtBlock.Sign() > 0 {
+		return cProps.KtBlock.Uint64(), nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -1031,6 +1123,7 @@ func GetContractCreationBlock(cProps *ConnectionProps) (uint64, error) {
 	}
 
 	log.Infof("Contract creation block found at block %d", low)
+	cProps.KtBlock = new(big.Int).SetUint64(low)
 	return low, nil
 }
 

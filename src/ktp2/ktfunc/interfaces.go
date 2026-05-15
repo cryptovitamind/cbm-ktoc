@@ -110,6 +110,11 @@ type ConnectionProps struct {
 	ChunkSize      int                  // Size of chunks for processing large data sets
 	WaitDuration   time.Duration        // Duration to wait between operations
 	UseLinearProbs bool                 // If true, use linear probability normalization; otherwise, use log normalization (default: log)
+
+	// DeclinesCache memoizes Declines() lookups for the lifetime of the
+	// process. Declines is a contract state read and rarely changes, so
+	// re-querying it every epoch is wasteful. Nil = first use will create it.
+	DeclinesCache map[common.Address]bool
 }
 
 // Addresses holds Ethereum addresses and private keys from environment variables.
