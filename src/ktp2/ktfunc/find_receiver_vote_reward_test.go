@@ -223,12 +223,15 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 	nextHeader := &types.Header{Number: big.NewInt(111)}
 	mockClient.On("HeaderByNumber", mock.Anything, big.NewInt(111)).Return(nextHeader, nil)
 
-	// Mock stake event: one staker at block 60 with 1000 wei
+	// Mock stake event: one staker at block 40 (pre-epoch) with 1000 wei.
+	// The stake must land before epochStart (50) so the staker carries a
+	// positive floor INTO the epoch — under the correct min-stake semantics,
+	// a wallet that only stakes mid-epoch has min=0 and is excluded.
 	stakerAddr := common.HexToAddress("0xabc123456789012345678901234567890123456")
 	stakeEvent := &ktv2.Ktv2Staked{
 		Arg0: stakerAddr,
 		Arg1: big.NewInt(1000),
-		Raw:  types.Log{BlockNumber: 60},
+		Raw:  types.Log{BlockNumber: 40},
 	}
 	stakedIter := &MockStakedIterator{events: []*ktv2.Ktv2Staked{stakeEvent}}
 

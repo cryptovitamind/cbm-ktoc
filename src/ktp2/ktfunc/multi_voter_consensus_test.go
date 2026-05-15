@@ -34,11 +34,12 @@ func createMockStakeDataMins() map[common.Address]*UserStakeData {
 }
 
 func mockGatherStakesAndWithdraws(_ *ConnectionProps, _ Ktv2Interface, _ *big.Int, _ *big.Int) (map[common.Address]map[uint64]*UserStakeData, error) {
-	// Return pre-built stake data
+	// Return pre-built stake data. Stake block 90 is pre-epoch (epochStart=100),
+	// so each wallet carries its full stake into the epoch as their minimum.
 	stakeDataMap := make(map[common.Address]map[uint64]*UserStakeData)
 	for addr, data := range createMockStakeDataMins() {
 		stakeDataMap[addr] = map[uint64]*UserStakeData{
-			100: {StakeAmount: data.StakeAmount}, // Dummy block
+			90: {StakeAmount: data.StakeAmount},
 		}
 	}
 	return stakeDataMap, nil

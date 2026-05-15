@@ -1079,25 +1079,25 @@ func findMinOverBlockRange(epochStartBlock, endBlock uint64, stakeDataMap map[co
 				log.Warnf("Nil stake data for %s at block %d", addr.Hex(), block)
 				continue
 			}
-			// Update current stake
-			currentStake.Add(currentStake, blockData[block].StakeAmount)
-			if currentStake.Sign() < 0 {
-				log.Warnf("Negative stake computed for %s at block %d: %s - Setting to zero", addr.Hex(), block, currentStake.String())
-				currentStake.SetInt64(0)
-			}
-			// If this block is before the range, skip min update but track for initial
-			if block < epochStartBlock {
-				continue
-			}
-			// At this point, block >= epochStartBlock
-			// Before any in-range updates, consider the initial stake (once)
-			if !inRangeProcessed {
+			// On the first in-range block, capture currentStake BEFORE applying
+			// this block's delta — that value is the wallet's stake at the
+			// instant the epoch window opens (i.e. their carried-in floor).
+			if block >= epochStartBlock && !inRangeProcessed {
 				if minStake == nil || currentStake.Cmp(minStake) < 0 {
 					minStake = new(big.Int).Set(currentStake)
 				}
 				inRangeProcessed = true
 			}
-			// Now update min with post-change stake
+			// Apply this block's delta.
+			currentStake.Add(currentStake, blockData[block].StakeAmount)
+			if currentStake.Sign() < 0 {
+				log.Warnf("Negative stake computed for %s at block %d: %s - Setting to zero", addr.Hex(), block, currentStake.String())
+				currentStake.SetInt64(0)
+			}
+			if block < epochStartBlock {
+				continue
+			}
+			// Post-event candidate (a withdraw can drop the running min further).
 			if minStake == nil || currentStake.Cmp(minStake) < 0 {
 				minStake = new(big.Int).Set(currentStake)
 			}
