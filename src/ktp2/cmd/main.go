@@ -75,6 +75,7 @@ type Flags struct {
 	currentBlock          bool
 	waitDuration          time.Duration
 	linearProbs           bool
+	verifyLastWinner      bool
 }
 
 func main() {
@@ -189,6 +190,7 @@ func parseFlags() Flags {
 	printOCVoteEvents := flag.String("printOCVoteEvents", "", "Print all OC vote events between <fromBlock>:<toBlock>")
 
 	linearProbs := flag.Bool("linearProbs", false, "Use linear probability normalization instead of log normalization (which skews towards smaller wallets).")
+	verifyLastWinner := flag.Bool("verifyLastWinner", false, "Verify that the last rewarded winner was correctly and fairly selected by replaying the winner calculation.")
 
 	// Testing Commands (for development and testing)
 	continuous := flag.Bool("continuous", false, "TESTING: Run continuous operations in a loop, simulating various actions (e.g., staking, giving ETH). For development use only.")
@@ -228,6 +230,7 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -chunkSize <n>      %s\n", "Set the chunk size for processing large data sets.")
 		fmt.Fprintf(os.Stderr, "  -setOCFee <n>       %s\n", "Set the OC fee to the specified uint16 value. Multiply by ten. For example, use 20 for 2% fee.")
 		fmt.Fprintf(os.Stderr, "  -withdrawFees       %s\n", "Withdraw owed fees from kt.")
+		fmt.Fprintf(os.Stderr, "  -verifyLastWinner   %s\n", "Verify the last rewarded winner was correctly and fairly selected.")
 		PrintOCUsage()
 
 		fmt.Fprintf(os.Stderr, "\n🛠️ Testing Commands (Local Dev Use Only):\n")
@@ -284,6 +287,7 @@ func parseFlags() Flags {
 		dataForOCVote:         *dataForOCVote,
 		printStakeEvents:      *printStakeEvents,
 		linearProbs:           *linearProbs,
+		verifyLastWinner:      *verifyLastWinner,
 	}
 }
 
@@ -435,6 +439,13 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 	if flags.keys {
 		LogOperationStart("Printing deterministic private keys - FOR TESTING ONLY!")
 		printDeterministicKeys()
+	}
+
+	if flags.verifyLastWinner {
+		LogOperationStart("Verifying last winner")
+		if err := ktfunc.VerifyLastWinner(cProps); err != nil {
+			log.Errorf("Failed to verify last winner: %v", err)
+		}
 	}
 
 	if flags.vote {
