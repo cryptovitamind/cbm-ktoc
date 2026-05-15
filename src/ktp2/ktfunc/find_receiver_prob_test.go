@@ -168,10 +168,11 @@ func TestCalculateProbsForEachWallet_LogNormalized_MultipleAddresses(t *testing.
 		t.Errorf("Expected found=true, got false")
 	}
 
-	// Calculate expected probabilities
-	log100 := math.Log(100)
-	log200 := math.Log(200)
-	log300 := math.Log(300)
+	// Calculate expected probabilities (log1p to match logNormalizeProbabilities,
+	// which uses log(1+stake) so a 1-wei stake doesn't collapse to 0).
+	log100 := math.Log1p(100)
+	log200 := math.Log1p(200)
+	log300 := math.Log1p(300)
 	sumLog := log100 + log200 + log300
 	expectedProb1 := log100 / sumLog
 	expectedProb2 := log200 / sumLog
@@ -215,5 +216,40 @@ func TestCalculateProbsForEachWallet_LogNormalized_ZeroStake(t *testing.T) {
 	expectedProb2 := 1.0 // log(100) / log(100) = 1.0
 	if math.Abs(prob2-expectedProb2) > 1e-6 {
 		t.Errorf("Expected probability %f for addr2, got %f", expectedProb2, prob2)
+	}
+}
+
+// TestCalculateProbsForEachWallet_LogNormalized_TinyStakeNotExcluded pins the
+// fix for the log(1)=0 exclusion bug. A wallet with a 1-wei stake must end up
+// with a small but strictly positive probability, even when there is a whale.
+func TestCalculateProbsForEachWallet_LogNormalized_TinyStakeNotExcluded(t *testing.T) {
+	tiny := common.HexToAddress("0x1")
+	whale := common.HexToAddress("0x2")
+	stakeDataMinsMap := map[common.Address]*UserStakeData{
+		tiny:  createUserStakeData1("1"),                   // 1 wei
+		whale: createUserStakeData1("1000000000000000000"), // 1 ETH
+	}
+	// totalMin is not used by the log path, but populate it so the helper
+	// doesn't short-circuit on a zero total.
+	totalMin := new(big.Int)
+	totalMin.SetString("1000000000000000001", 10)
+
+	found := calculateProbsForEachWallet(stakeDataMinsMap, totalMin, false)
+	if !found {
+		t.Fatalf("Expected found=true, got false")
+	}
+
+	tinyProb, _ := stakeDataMinsMap[tiny].Prob.Float64()
+	whaleProb, _ := stakeDataMinsMap[whale].Prob.Float64()
+
+	if tinyProb <= 0 {
+		t.Errorf("tiny-stake wallet was excluded (prob=%g); expected a small but positive share", tinyProb)
+	}
+	if whaleProb <= tinyProb {
+		t.Errorf("whale prob (%g) should still exceed tiny prob (%g) under log normalization", whaleProb, tinyProb)
+	}
+	// Combined probs should sum to ~1.
+	if total := tinyProb + whaleProb; math.Abs(total-1.0) > 1e-9 {
+		t.Errorf("probabilities should sum to 1, got %g", total)
 	}
 }

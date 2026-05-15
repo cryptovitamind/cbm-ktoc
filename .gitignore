@@ -45,3 +45,7 @@ coveragessh -T git@github.com
 # Test coverage results and unit test collateral
 src/ktp2/coverage
 *.db
+
+# Built binary output of `./build.sh` / `build.ps1`
+/cmd
+/ktoc

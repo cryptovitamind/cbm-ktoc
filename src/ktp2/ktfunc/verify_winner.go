@@ -120,7 +120,9 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 	}
 
 	if !found {
-		log.Warn("No Rwd events found in search range. Nothing to verify.")
+		log.Warnf("No Rwd events found in blocks %d-%d. Nothing to verify. "+
+			"If you expect a recent reward, increase the search range or pick a more recent block.",
+			searchStart, currentBlock)
 		return nil
 	}
 
@@ -140,6 +142,12 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 	}
 	defer votedIter.Close()
 
+	// Iterate to find the Voted event that triggered this Rwd. Voted events
+	// are returned in ascending block order, so the *last* match for the
+	// winner address with BlockNumber ≤ lastRwdBlock is the most recent vote
+	// preceding the reward — i.e., from the same epoch. If the same wallet
+	// won earlier epochs in the search range, those earlier Voted events get
+	// overwritten and we end up with the correct (latest) one.
 	var votedEpochStart *big.Int
 	var votedBlockHash string
 	var votedFound bool
@@ -148,7 +156,6 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 		if evt == nil {
 			continue
 		}
-		// Match on same winner address, at or before the Rwd block
 		if evt.Arg1 == lastRwdAddr && evt.Raw.BlockNumber <= lastRwdBlock {
 			votedEpochStart = evt.Arg0
 			votedBlockHash = evt.Arg2
@@ -207,8 +214,11 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 		log.Info("  VERIFIED: The last winner was correctly selected.")
 	} else {
 		log.Warn("  MISMATCH: The calculated winner does not match the on-chain winner!")
-		log.Warn("  This could indicate a different probability mode was used (try -linearProbs),")
-		log.Warn("  or that contract state has changed since the epoch was rewarded.")
+		log.Warn("  Possible causes:")
+		log.Warn("    - the epoch was rewarded before the min-stake fix shipped, so the")
+		log.Warn("      on-chain winner was selected by the buggy pre-fix algorithm;")
+		log.Warn("    - a different probability mode was used at vote time (try -linearProbs);")
+		log.Warn("    - contract state (e.g., declines) has changed since the epoch was rewarded.")
 	}
 	log.Info("==========================================")
 

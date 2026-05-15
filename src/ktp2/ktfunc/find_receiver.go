@@ -421,8 +421,15 @@ func filterDeclinedStakers(stakeDataMinsMap map[common.Address]*UserStakeData, c
 	return nil
 }
 
-// logNormalizeProbabilities applies log normalization to the probabilities in stakeDataMinsMap.
-// It computes prob = log(stake) / sum(log(stakes)) for each valid stake, skewing towards smaller wallets.
+// logNormalizeProbabilities applies log-scale normalization to the
+// probabilities in stakeDataMinsMap: prob_i = log(1+stake_i) / sum(log(1+stake_j)).
+//
+// Larger stakes still win more often, but the log compresses disparities so
+// a wallet with 1000x more stake is only modestly more likely to win — not
+// 1000x — preventing whales from drowning out smaller stakers.
+//
+// We use log1p (log(1+x)) instead of log(x) so a 1-wei stake gets a small
+// but non-zero probability instead of being silently excluded (log(1)=0).
 func logNormalizeProbabilities(stakeDataMinsMap map[common.Address]*UserStakeData) error {
 	if stakeDataMinsMap == nil || len(stakeDataMinsMap) == 0 {
 		return nil
@@ -431,7 +438,7 @@ func logNormalizeProbabilities(stakeDataMinsMap map[common.Address]*UserStakeDat
 	sumLog := new(big.Float)
 	validCount := 0
 
-	// First pass: compute sum of log(stakes) for valid stakes
+	// First pass: compute sum of log(1+stake) for valid stakes
 	for _, stakeData := range stakeDataMinsMap {
 		if stakeData.StakeAmount == nil || stakeData.StakeAmount.Cmp(big.NewInt(0)) <= 0 {
 			stakeData.Prob = new(big.Float).SetFloat64(0)
@@ -439,7 +446,7 @@ func logNormalizeProbabilities(stakeDataMinsMap map[common.Address]*UserStakeDat
 		}
 		stakeFloat := new(big.Float).SetInt(stakeData.StakeAmount)
 		stakeF64, _ := stakeFloat.Float64()
-		logStake := math.Log(stakeF64)
+		logStake := math.Log1p(stakeF64)
 		logStakeBig := new(big.Float).SetFloat64(logStake)
 		sumLog.Add(sumLog, logStakeBig)
 		validCount++
@@ -456,7 +463,7 @@ func logNormalizeProbabilities(stakeDataMinsMap map[common.Address]*UserStakeDat
 		}
 		stakeFloat := new(big.Float).SetInt(stakeData.StakeAmount)
 		stakeF64, _ := stakeFloat.Float64()
-		logStake := math.Log(stakeF64)
+		logStake := math.Log1p(stakeF64)
 		logStakeBig := new(big.Float).SetFloat64(logStake)
 		stakeData.Prob = new(big.Float).Quo(logStakeBig, sumLog)
 	}
@@ -487,7 +494,8 @@ func calculateProbsForEachWallet(stakeDataMinsMap map[common.Address]*UserStakeD
 			log.Debugf("Address: %s, Linear Probability: %f\n", addr.Hex(), stakeData.Prob)
 		}
 	} else {
-		// Log normalization to skew towards smaller wallets
+		// Log-scale normalization: still favors larger stakers but compresses
+		// the disparity so smaller wallets aren't drowned out by whales.
 		err := logNormalizeProbabilities(stakeDataMinsMap)
 		if err != nil {
 			log.Errorf("Failed to log normalize probabilities: %v", err)
