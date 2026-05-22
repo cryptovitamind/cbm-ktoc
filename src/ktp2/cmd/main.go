@@ -135,7 +135,7 @@ func displayStartupBanner() {
 	fmt.Print("──────────────────────────────────────────────────────────────────────────────────────────\n")
 	fmt.Print("\n")
 	figure.NewColorFigure("KTOC", "larry3d", "red", true).Print()
-	figure.NewColorFigure("v0.4-beta", "larry3d", "red", true).Print()
+	figure.NewColorFigure("v0.4.1-beta", "larry3d", "red", true).Print()
 	fmt.Print("\n")
 	figure.NewColorFigure("shinatoken", "binary", "red", true).Print()
 	fmt.Print("\n")
