@@ -244,3 +244,139 @@ func TestGatherStakesAndWithdraws_Chunking(t *testing.T) {
 	// Clean up test database
 	os.Remove("cache/events_test.db")
 }
+
+// ============================================================================
+// Phase 4c — cache schema versioning + auto-migrate.
+//
+// Operators should never have to manually delete cache files between
+// releases. migrateOrInitCacheSchema is responsible for self-healing the
+// per-contract bbolt DB on upgrade: if no schema_version marker exists,
+// or it's older than cacheSchemaVersion, the chunks and meta buckets
+// are dropped and recreated. Once the marker matches, subsequent calls
+// are a fast no-op.
+
+// TestCache_WipesAndMigratesOnSchemaMismatch simulates a node upgraded
+// from a pre-Phase-3 build: the DB contains an old "chunks" bucket with
+// the legacy 16-byte (start, end) key format and no meta bucket. The
+// expectation: on the next run, the chunk is gone, the meta bucket has
+// the current schema_version marker, and a second call is idempotent
+// (does not re-wipe).
+func TestCache_WipesAndMigratesOnSchemaMismatch(t *testing.T) {
+	dbPath := t.TempDir() + "/legacy.db"
+	db, err := bbolt.Open(dbPath, 0600, nil)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	// Seed a legacy v1-style entry: chunks bucket with a 16-byte key and
+	// no meta bucket / no schema_version marker.
+	err = db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucket([]byte("chunks"))
+		if err != nil {
+			return err
+		}
+		legacyKey := make([]byte, 16) // 16-byte BE (start, end) — old format
+		binary.BigEndian.PutUint64(legacyKey, 1000)
+		binary.BigEndian.PutUint64(legacyKey[8:], 1499)
+		return b.Put(legacyKey, []byte("stale-data-do-not-trust"))
+	})
+	if err != nil {
+		t.Fatalf("seed legacy: %v", err)
+	}
+
+	// Run the migration. The legacy chunk should be wiped, the meta bucket
+	// created, and schema_version written.
+	if err := migrateOrInitCacheSchema(db); err != nil {
+		t.Fatalf("first migrateOrInitCacheSchema: %v", err)
+	}
+
+	err = db.View(func(tx *bbolt.Tx) error {
+		chunks := tx.Bucket([]byte("chunks"))
+		if chunks == nil {
+			t.Fatalf("chunks bucket should exist after migration")
+		}
+		// The legacy entry should be gone.
+		count := 0
+		_ = chunks.ForEach(func(_, _ []byte) error { count++; return nil })
+		if count != 0 {
+			t.Errorf("expected chunks bucket to be empty after wipe, has %d entries", count)
+		}
+		meta := tx.Bucket([]byte("meta"))
+		if meta == nil {
+			t.Fatalf("meta bucket should exist after migration")
+		}
+		v := meta.Get([]byte("schema_version"))
+		if len(v) != 4 {
+			t.Fatalf("schema_version should be 4 bytes, got %d", len(v))
+		}
+		if got := binary.BigEndian.Uint32(v); got != cacheSchemaVersion {
+			t.Errorf("schema_version = %d, want %d", got, cacheSchemaVersion)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("post-migration view: %v", err)
+	}
+
+	// Second call should be a no-op — write a sentinel chunk; if the migration
+	// is idempotent, it'll still be there afterward. (If the migration
+	// re-wiped on every run, the sentinel would disappear.)
+	sentinelKey := make([]byte, 8)
+	binary.BigEndian.PutUint64(sentinelKey, 12345)
+	err = db.Update(func(tx *bbolt.Tx) error {
+		return tx.Bucket([]byte("chunks")).Put(sentinelKey, []byte("sentinel"))
+	})
+	if err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	if err := migrateOrInitCacheSchema(db); err != nil {
+		t.Fatalf("second migrateOrInitCacheSchema: %v", err)
+	}
+
+	err = db.View(func(tx *bbolt.Tx) error {
+		got := tx.Bucket([]byte("chunks")).Get(sentinelKey)
+		if string(got) != "sentinel" {
+			t.Errorf("sentinel chunk lost after second migration call (expected idempotent no-op); got %q", got)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("idempotency view: %v", err)
+	}
+}
+
+// TestCache_FreshDBInitializesSchemaWithoutWipe — a brand-new DB has no
+// schema_version. The first call should create the buckets and set the
+// marker, but there's nothing to wipe. This is the normal first-run path.
+func TestCache_FreshDBInitializesSchemaWithoutWipe(t *testing.T) {
+	dbPath := t.TempDir() + "/fresh.db"
+	db, err := bbolt.Open(dbPath, 0600, nil)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	if err := migrateOrInitCacheSchema(db); err != nil {
+		t.Fatalf("migrateOrInitCacheSchema on fresh DB: %v", err)
+	}
+
+	err = db.View(func(tx *bbolt.Tx) error {
+		if tx.Bucket([]byte("chunks")) == nil {
+			t.Errorf("chunks bucket missing on fresh DB")
+		}
+		meta := tx.Bucket([]byte("meta"))
+		if meta == nil {
+			t.Fatalf("meta bucket missing on fresh DB")
+		}
+		v := meta.Get([]byte("schema_version"))
+		if got := binary.BigEndian.Uint32(v); got != cacheSchemaVersion {
+			t.Errorf("schema_version = %d, want %d", got, cacheSchemaVersion)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("post-init view: %v", err)
+	}
+}

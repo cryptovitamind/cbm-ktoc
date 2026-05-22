@@ -811,21 +811,18 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 	defer db.Close()
 	// Buckets:
 	//   chunks — key = 8-byte BE chunkStart, value = gob ChunkEvents
-	//   meta   — key "tip" = 8-byte BE highest contiguously-processed block
+	//   meta   — keys:
+	//     "tip"            = 8-byte BE highest contiguously-processed block
+	//     "schema_version" = 4-byte BE uint32; if absent or older than
+	//                        cacheSchemaVersion, both buckets are wiped on
+	//                        open so the node self-heals across upgrades.
 	// Chunk endings are NOT in the key. A chunk for chunkStart contains all
 	// events from [chunkStart, min(chunkStart+chunkSize-1, tip)]. When a new
 	// call extends past the prior tip into the chunk, we fetch only the
 	// uncovered tail and merge it into the existing chunk.
-	err = db.Update(func(tx *bbolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists([]byte("chunks")); err != nil {
-			return err
-		}
-		_, err := tx.CreateBucketIfNotExists([]byte("meta"))
-		return err
-	})
-	if err != nil {
-		log.Errorf("Failed to create buckets: %v", err)
-		return nil, fmt.Errorf("failed to create buckets: %w", err)
+	if err := migrateOrInitCacheSchema(db); err != nil {
+		log.Errorf("Failed to init/migrate cache schema: %v", err)
+		return nil, fmt.Errorf("failed to init/migrate cache schema: %w", err)
 	}
 	chunkSize := uint64(cProps.ChunkSize)
 	if chunkSize == 0 {
@@ -981,6 +978,78 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 		debugRawLogs(cProps, startU, endU)
 	}
 	return stakeDataMap, nil
+}
+
+// cacheSchemaVersion identifies the current on-disk layout of the per-contract
+// bbolt cache (cache/<addr>.db). Bump this whenever the storage layout
+// changes in a way that requires existing entries to be invalidated.
+//
+// Versions:
+//   - 1 (implicit; pre-Phase-3): chunks bucket only, keys = 16-byte BE
+//     (chunkStart, chunkEnd). No meta bucket. Trailing-chunk keys shifted
+//     every epoch — orphaned by the Phase 3 cache rewrite.
+//   - 2 (current): chunks bucket with 8-byte BE chunkStart keys; meta
+//     bucket with "tip" pointer and this "schema_version" marker.
+const cacheSchemaVersion uint32 = 2
+
+// migrateOrInitCacheSchema reads the schema_version marker from the meta
+// bucket. If it's missing or older than cacheSchemaVersion, both buckets
+// are dropped and recreated and the current version is written. The check
+// runs once per process; on subsequent calls the marker matches and the
+// function is a fast no-op that just ensures the buckets exist.
+//
+// This is how the node self-heals across upgrades — operators never have
+// to delete cache files manually.
+func migrateOrInitCacheSchema(db *bbolt.DB) error {
+	return db.Update(func(tx *bbolt.Tx) error {
+		// Read whatever schema_version may exist on the current meta bucket.
+		var stored uint32
+		var hasStored bool
+		if meta := tx.Bucket([]byte("meta")); meta != nil {
+			if v := meta.Get([]byte("schema_version")); len(v) == 4 {
+				stored = binary.BigEndian.Uint32(v)
+				hasStored = true
+			}
+		}
+		if hasStored && stored == cacheSchemaVersion {
+			// Already on the current schema — ensure both buckets exist
+			// (defensive — they should already) and return.
+			if _, err := tx.CreateBucketIfNotExists([]byte("chunks")); err != nil {
+				return err
+			}
+			if _, err := tx.CreateBucketIfNotExists([]byte("meta")); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		// Missing or older — wipe and reinitialize. Deletes silently no-op
+		// on absent buckets, which is what we want for a fresh DB.
+		if err := tx.DeleteBucket([]byte("chunks")); err != nil && err != bbolt.ErrBucketNotFound {
+			return err
+		}
+		if err := tx.DeleteBucket([]byte("meta")); err != nil && err != bbolt.ErrBucketNotFound {
+			return err
+		}
+		if _, err := tx.CreateBucket([]byte("chunks")); err != nil {
+			return err
+		}
+		meta, err := tx.CreateBucket([]byte("meta"))
+		if err != nil {
+			return err
+		}
+		buf := make([]byte, 4)
+		binary.BigEndian.PutUint32(buf, cacheSchemaVersion)
+		if err := meta.Put([]byte("schema_version"), buf); err != nil {
+			return err
+		}
+		if hasStored {
+			log.Infof("Cache schema migrated: was v%d, now v%d (cache wiped and rebuilt)", stored, cacheSchemaVersion)
+		} else {
+			log.Infof("Cache schema initialized at v%d", cacheSchemaVersion)
+		}
+		return nil
+	})
 }
 
 // buildStakeDataMap folds raw Staked / Withdrew events into per-address,
