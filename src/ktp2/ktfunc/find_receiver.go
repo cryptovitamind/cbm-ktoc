@@ -1010,9 +1010,11 @@ func buildStakeDataMap(stakeEvents []StakeEvent, withdrawEvents []WithdrawEvent)
 			stakeDataMap[addr][e.Block] = &UserStakeData{StakeAmount: big.NewInt(0)}
 		}
 		stakeDataMap[addr][e.Block].StakeAmount.Sub(stakeDataMap[addr][e.Block].StakeAmount, e.Amount)
-		if stakeDataMap[addr][e.Block].StakeAmount.Sign() < 0 {
-			stakeDataMap[addr][e.Block].StakeAmount.SetInt64(0)
-		}
+		// Do NOT clamp the per-block delta at zero — it must stay signed so
+		// withdraws at blocks without a same-block stake aren't silently
+		// erased. findMinOverBlockRange clamps the cumulative stake at zero,
+		// which is the correct place to enforce the on-chain non-negative
+		// invariant.
 	}
 	return stakeDataMap
 }
