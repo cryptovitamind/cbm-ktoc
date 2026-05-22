@@ -974,7 +974,22 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 			withdrawEvents = append(withdrawEvents, chunk.WithdrawEvents...)
 		}
 	}
-	// Build stakeDataMap
+	stakeDataMap := buildStakeDataMap(stakeEvents, withdrawEvents)
+	log.Infof("Total addresses with events: %d", len(stakeDataMap))
+	if len(stakeDataMap) == 0 {
+		log.Warn("No events found in range - debugging with raw logs")
+		debugRawLogs(cProps, startU, endU)
+	}
+	return stakeDataMap, nil
+}
+
+// buildStakeDataMap folds raw Staked / Withdrew events into per-address,
+// per-block signed deltas. Per-block deltas may go negative (a withdraw
+// at a block where the same wallet didn't also stake in that block);
+// callers that need a non-negative running stake (findMinOverBlockRange)
+// clamp the cumulative value, which is the correct place to enforce the
+// on-chain invariant.
+func buildStakeDataMap(stakeEvents []StakeEvent, withdrawEvents []WithdrawEvent) map[common.Address]map[uint64]*UserStakeData {
 	stakeDataMap := make(map[common.Address]map[uint64]*UserStakeData)
 	for _, e := range stakeEvents {
 		addr := e.Addr
@@ -999,12 +1014,7 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 			stakeDataMap[addr][e.Block].StakeAmount.SetInt64(0)
 		}
 	}
-	log.Infof("Total addresses with events: %d", len(stakeDataMap))
-	if len(stakeDataMap) == 0 {
-		log.Warn("No events found in range - debugging with raw logs")
-		debugRawLogs(cProps, startU, endU)
-	}
-	return stakeDataMap, nil
+	return stakeDataMap
 }
 
 func queryChunkWithRetry(cProps *ConnectionProps, kt Ktv2Interface, start, end uint64, stakeOut *[]StakeEvent, withdrawOut *[]WithdrawEvent) error {
