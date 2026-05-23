@@ -439,3 +439,98 @@ func TestRewardWinningWallet_OCFeesExceedBalance(t *testing.T) {
 	mockClient.AssertExpectations(t)
 	mockKt.AssertExpectations(t)
 }
+
+// ============================================================================
+// Phase 5c — rewardWinningWallet error-variant tests.
+//
+// Existing tests above cover the OC-fee subtraction math. These cover the
+// error paths: Rwd failures (with the special "Epoch incomplete" swallow),
+// BalanceAt failures, TlOcFees failures.
+
+// rewardSetup builds the minimum ConnectionProps + mocks needed to exercise
+// rewardWinningWallet up to the Rwd call.
+func rewardSetup(t *testing.T) (
+	cProps *ConnectionProps,
+	mockClient *MockEthClient,
+	mockKt *MockKtv2,
+	winner common.Address,
+	totalMin *big.Int,
+) {
+	t.Helper()
+	logrus.SetLevel(logrus.FatalLevel)
+
+	mockClient = &MockEthClient{}
+	mockKt = &MockKtv2{}
+	cProps = &ConnectionProps{
+		Client:       mockClient,
+		Kt:           mockKt,
+		KtAddr:       common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:     common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
+		ChainID:      big.NewInt(1),
+		BlocksToWait: 0,
+	}
+	priv, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
+	cProps.MyPrivateKey = priv
+	winner = common.HexToAddress("0xabc123456789012345678901234567890123456")
+	totalMin = big.NewInt(1000)
+	return
+}
+
+// TestRewardWinningWallet_RwdReturnsEpochIncompleteIsSilent — when Rwd
+// returns an "Epoch incomplete" error (another node beat us to the reward),
+// the function logs a warning and returns nil.
+func TestRewardWinningWallet_RwdReturnsEpochIncompleteIsSilent(t *testing.T) {
+	cProps, mockClient, mockKt, winner, totalMin := rewardSetup(t)
+
+	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).Return(big.NewInt(0), nil).Once()
+	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(int64(2e18)), nil)
+	mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil)
+	mockKt.On("Rwd", mock.Anything, winner, mock.AnythingOfType("*big.Int")).
+		Return((*types.Transaction)(nil), errors.New("execution reverted: Epoch incomplete"))
+
+	err := rewardWinningWallet(cProps, winner, totalMin)
+	assert.NoError(t, err, "Epoch incomplete should be swallowed, not propagated")
+}
+
+// TestRewardWinningWallet_RwdReturnsOtherErrorPropagates — any other Rwd
+// error is wrapped and returned.
+func TestRewardWinningWallet_RwdReturnsOtherErrorPropagates(t *testing.T) {
+	cProps, mockClient, mockKt, winner, totalMin := rewardSetup(t)
+
+	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).Return(big.NewInt(0), nil).Once()
+	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(int64(2e18)), nil)
+	mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil)
+	mockKt.On("Rwd", mock.Anything, winner, mock.AnythingOfType("*big.Int")).
+		Return((*types.Transaction)(nil), errors.New("revert: only OC can call rwd"))
+
+	err := rewardWinningWallet(cProps, winner, totalMin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to call rwd function")
+}
+
+// TestRewardWinningWallet_BalanceAtFailureBeforeReward — looking up the
+// winner's pre-reward balance fails. No tx should be sent.
+func TestRewardWinningWallet_BalanceAtFailureBeforeReward(t *testing.T) {
+	cProps, mockClient, _, winner, totalMin := rewardSetup(t)
+
+	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).
+		Return((*big.Int)(nil), errors.New("rpc: timeout")).Once()
+
+	err := rewardWinningWallet(cProps, winner, totalMin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "winner's balance before reward")
+}
+
+// TestRewardWinningWallet_TlOcFeesFailurePropagates — TlOcFees on the
+// contract fails. Function must error out before sending Rwd.
+func TestRewardWinningWallet_TlOcFeesFailurePropagates(t *testing.T) {
+	cProps, mockClient, mockKt, winner, totalMin := rewardSetup(t)
+
+	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).Return(big.NewInt(0), nil).Once()
+	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(int64(2e18)), nil)
+	mockKt.On("TlOcFees", mock.Anything).Return((*big.Int)(nil), errors.New("rpc: connection refused"))
+
+	err := rewardWinningWallet(cProps, winner, totalMin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "total OC fees")
+}

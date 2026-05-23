@@ -1,7 +1,9 @@
 package ktfunc
 
 import (
+	"errors"
 	"math/big"
+	"os"
 	"testing"
 
 	"ktp2/src/abis/ktv2"
@@ -424,4 +426,117 @@ func TestGetOwedEpochBlocks_ZeroChunkSizeReturnsError(t *testing.T) {
 	_, err := GetOwedEpochBlocks(cProps, common.Address{}, 0, 100)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Chunk size cannot be zero")
+}
+
+// ============================================================================
+// Phase 5c — WithdrawOCFees tests.
+//
+// WithdrawOCFees pays out OC fees to the operator. Previously had zero
+// direct tests. These hit the simplest paths first: the up-front
+// validation/error returns. Happy path exercises a lot of setup
+// (TransactOpts, WaitMined, cache writes) that would 5x this file —
+// deferred to an integration runner. Even so, the early-error paths cover
+// the most common failure modes operators would see.
+
+// withdrawSetup builds the minimum ConnectionProps + mocks needed to
+// drive WithdrawOCFees up to the PastOcFees call. Returns a temp-dir
+// cleanup that resets the working directory (openFeesDB writes to ./cache).
+func withdrawSetup(t *testing.T) (
+	cProps *ConnectionProps,
+	mockClient *MockEthClient,
+	mockKt *MockKtv2,
+	callerAddr common.Address,
+) {
+	t.Helper()
+	// openFeesDB writes to "cache/" relative to CWD. Use a temp dir to
+	// avoid littering the repo. Restore CWD on cleanup.
+	tmp := t.TempDir()
+	oldwd, _ := os.Getwd()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	mockClient = &MockEthClient{}
+	mockKt = &MockKtv2{}
+	myPub := common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d")
+	cProps = &ConnectionProps{
+		Client:       mockClient,
+		Kt:           mockKt,
+		KtAddr:       common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:     myPub,
+		ChainID:      big.NewInt(1),
+		BlocksToWait: 0,
+		Addresses: &Addresses{
+			MyPublicKey: myPub.Hex(),
+		},
+	}
+	priv, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
+	cProps.MyPrivateKey = priv
+	callerAddr = myPub
+
+	// PrintKtBalance + PrintBalanceOfAddr both call BalanceAt; cover with .Maybe().
+	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(int64(1e18)), nil).Maybe()
+	mockClient.On("BalanceAt", mock.Anything, myPub, (*big.Int)(nil)).Return(big.NewInt(int64(1e18)), nil).Maybe()
+	return
+}
+
+// TestWithdrawOCFees_NoFeesOwedReturnsEarly — PastOcFees returns 0.
+// Function logs "No fees owed" and returns nil without sending any tx.
+func TestWithdrawOCFees_NoFeesOwedReturnsEarly(t *testing.T) {
+	cProps, _, mockKt, caller := withdrawSetup(t)
+
+	mockKt.On("PastOcFees", mock.Anything, caller).Return(big.NewInt(0), nil)
+
+	err := WithdrawOCFees(cProps, "")
+	assert.NoError(t, err)
+	mockKt.AssertNotCalled(t, "WithdrawOCFee", mock.Anything)
+}
+
+// TestWithdrawOCFees_PastOcFeesErrorPropagates — the contract query for
+// total owed fees fails. Function returns a wrapped error before doing
+// anything else.
+func TestWithdrawOCFees_PastOcFeesErrorPropagates(t *testing.T) {
+	cProps, _, mockKt, caller := withdrawSetup(t)
+
+	mockKt.On("PastOcFees", mock.Anything, caller).
+		Return((*big.Int)(nil), errors.New("rpc: connection refused"))
+
+	err := WithdrawOCFees(cProps, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "pastOcFees")
+}
+
+// TestWithdrawOCFees_BalanceBeforeFailureBlocksTx — pre-withdraw balance
+// lookup fails. Function should error out before issuing the WithdrawOCFee
+// transaction.
+func TestWithdrawOCFees_BalanceBeforeFailureBlocksTx(t *testing.T) {
+	cProps, mockClient, mockKt, caller := withdrawSetup(t)
+
+	mockKt.On("PastOcFees", mock.Anything, caller).Return(big.NewInt(int64(1e18)), nil)
+	// Reset the default Maybe() mock for caller's BalanceAt to fail.
+	mockClient.ExpectedCalls = nil
+	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(int64(1e18)), nil).Maybe()
+	mockClient.On("BalanceAt", mock.Anything, caller, (*big.Int)(nil)).
+		Return((*big.Int)(nil), errors.New("rpc: timeout"))
+
+	err := WithdrawOCFees(cProps, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "balance before withdrawal")
+	mockKt.AssertNotCalled(t, "WithdrawOCFee", mock.Anything)
+}
+
+// TestWithdrawOCFees_WithdrawOCFeeContractErrorPropagates — the contract
+// WithdrawOCFee call fails (e.g., revert). Function wraps and returns.
+func TestWithdrawOCFees_WithdrawOCFeeContractErrorPropagates(t *testing.T) {
+	cProps, mockClient, mockKt, caller := withdrawSetup(t)
+
+	mockKt.On("PastOcFees", mock.Anything, caller).Return(big.NewInt(int64(1e18)), nil)
+	mockClient.On("BalanceAt", mock.Anything, caller, (*big.Int)(nil)).Return(big.NewInt(int64(5e18)), nil)
+	mockKt.On("WithdrawOCFee", mock.Anything).
+		Return((*types.Transaction)(nil), errors.New("revert: nothing to withdraw"))
+
+	err := WithdrawOCFees(cProps, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "withdrawOCFee")
 }
