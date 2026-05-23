@@ -22,7 +22,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-const contractStateCacheTTL = 30 * time.Second
+const (
+	contractStateCacheTTL = 30 * time.Second
+	gasPriceCacheTTL      = 60 * time.Second
+)
 
 // cachedValue is a single-entry TTL cache safe for concurrent access. Zero
 // value is a fresh cache with no entry. Generic so each call site keeps
@@ -102,5 +105,22 @@ func cachedTlOcFees(cProps *ConnectionProps) (*big.Int, error) {
 		return nil, err
 	}
 	cProps.cachedTlOcFees.Set(new(big.Int).Set(v), contractStateCacheTTL)
+	return v, nil
+}
+
+// cachedSuggestGasPrice returns the eth client's gas-price suggestion,
+// re-querying at most once per gasPriceCacheTTL. Gas prices fluctuate
+// continuously but the consumers here use the result only for INFO logging
+// (kt_props.go) or tx-construction defaults (vote_ops.go), so a 60-second
+// staleness is fine and saves several RPC calls per loop iteration.
+func cachedSuggestGasPrice(cProps *ConnectionProps) (*big.Int, error) {
+	if v, ok := cProps.cachedGasPrice.Get(); ok {
+		return new(big.Int).Set(v), nil
+	}
+	v, err := cProps.Client.SuggestGasPrice(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	cProps.cachedGasPrice.Set(new(big.Int).Set(v), gasPriceCacheTTL)
 	return v, nil
 }

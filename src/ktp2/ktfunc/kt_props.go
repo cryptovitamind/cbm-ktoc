@@ -133,8 +133,8 @@ func CreateKtFromFact(cProps *ConnectionProps) (common.Address, error) {
 	}
 	log.Info("Factory contract is deployed")
 
-	// Fetch the suggested gas price from the network
-	gasPrice, err := cProps.Client.SuggestGasPrice(context.Background())
+	// Fetch the suggested gas price from the network (60s TTL cache)
+	gasPrice, err := cachedSuggestGasPrice(cProps)
 	if err != nil {
 		log.Errorf("Failed to retrieve suggested gas price: %v", err)
 		return common.Address{}, fmt.Errorf("failed to get gas price: %w", err)

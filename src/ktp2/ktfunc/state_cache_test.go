@@ -88,6 +88,19 @@ func TestCachedValue_ExpiresAfterTTL(t *testing.T) {
 	assert.False(t, ok, "value should have expired")
 }
 
+func TestCachedSuggestGasPrice_HitsClientOnceWithinTTL(t *testing.T) {
+	mockClient := &MockEthClient{}
+	cProps := &ConnectionProps{Client: mockClient}
+	mockClient.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(20_000_000_000), nil).Once()
+
+	for i := 0; i < 5; i++ {
+		v, err := cachedSuggestGasPrice(cProps)
+		assert.NoError(t, err)
+		assert.Equal(t, uint64(20_000_000_000), v.Uint64())
+	}
+	mockClient.AssertNumberOfCalls(t, "SuggestGasPrice", 1)
+}
+
 func TestCachedStartBlock_PropagatesContractError(t *testing.T) {
 	mockKt := &MockKtv2{}
 	cProps := &ConnectionProps{

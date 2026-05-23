@@ -145,6 +145,7 @@ type ConnectionProps struct {
 	cachedEpochInterval cachedValue[uint16]
 	cachedConsensusReq  cachedValue[uint16]
 	cachedTlOcFees      cachedValue[*big.Int]
+	cachedGasPrice      cachedValue[*big.Int] // Phase 6e (60s TTL)
 }
 
 // Addresses holds Ethereum addresses and private keys from environment variables.

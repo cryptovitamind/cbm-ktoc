@@ -116,8 +116,8 @@ func VoteToAdd(cProps *ConnectionProps, targetAddr common.Address, data string) 
 		log.Infof("Data provided: %q", data)
 	}
 
-	// Estimate gas
-	gasPrice, err := cProps.Client.SuggestGasPrice(context.Background())
+	// Estimate gas (60s TTL cache; used only for INFO log here)
+	gasPrice, err := cachedSuggestGasPrice(cProps)
 	if err != nil {
 		log.Warnf("Failed to get gas price: %v", err)
 	} else {
