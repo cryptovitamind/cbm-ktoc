@@ -75,6 +75,7 @@ type Flags struct {
 	currentBlock          bool
 	waitDuration          time.Duration
 	verifyLastWinner      bool
+	confirmationDepth     uint64
 }
 
 func main() {
@@ -189,6 +190,7 @@ func parseFlags() Flags {
 	printOCVoteEvents := flag.String("printOCVoteEvents", "", "Print all OC vote events between <fromBlock>:<toBlock>")
 
 	verifyLastWinner := flag.Bool("verifyLastWinner", false, "Verify that the last rewarded winner was correctly and fairly selected by replaying the winner calculation.")
+	confirmationDepth := flag.Uint64("confirmationDepth", 0, fmt.Sprintf("Number of blocks past epochEnd to sample the lottery seed (0 = default %d). Larger values are more reorg-resistant at the cost of voting latency. Can also be set via the CONFIRMATION_DEPTH env var.", ktfunc.DefaultConfirmationDepth))
 
 	// Testing Commands (for development and testing)
 	continuous := flag.Bool("continuous", false, "TESTING: Run continuous operations in a loop, simulating various actions (e.g., staking, giving ETH). For development use only.")
@@ -285,6 +287,7 @@ func parseFlags() Flags {
 		dataForOCVote:         *dataForOCVote,
 		printStakeEvents:      *printStakeEvents,
 		verifyLastWinner:      *verifyLastWinner,
+		confirmationDepth:     *confirmationDepth,
 	}
 }
 
@@ -636,6 +639,23 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 	}
 
 	cProps.WaitDuration = duration
+
+	// Resolve confirmation depth: CLI flag > CONFIRMATION_DEPTH env > default.
+	switch {
+	case flags.confirmationDepth > 0:
+		cProps.ConfirmationDepth = flags.confirmationDepth
+		log.Infof("Confirmation depth set via flag: %d", cProps.ConfirmationDepth)
+	case os.Getenv("CONFIRMATION_DEPTH") != "":
+		if v, err := strconv.ParseUint(os.Getenv("CONFIRMATION_DEPTH"), 10, 64); err == nil && v > 0 {
+			cProps.ConfirmationDepth = v
+			log.Infof("Confirmation depth set via env: %d", cProps.ConfirmationDepth)
+		} else {
+			cProps.ConfirmationDepth = ktfunc.DefaultConfirmationDepth
+			log.Warnf("Invalid CONFIRMATION_DEPTH env value %q; using default %d", os.Getenv("CONFIRMATION_DEPTH"), cProps.ConfirmationDepth)
+		}
+	default:
+		cProps.ConfirmationDepth = ktfunc.DefaultConfirmationDepth
+	}
 
 	// Set QueryDelay from environment variable or default to 100ms
 	queryDelayMs := 100 // Default to 100ms

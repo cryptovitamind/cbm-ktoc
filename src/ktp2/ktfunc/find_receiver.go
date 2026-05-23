@@ -187,9 +187,19 @@ func calculateVoteAndReward(
 		return common.Address{}, fmt.Errorf("epoch start or end block is nil")
 	}
 
-	const oneExtraBlock = 1
-	nextBlockNumber := new(big.Int).Add(endEpochBlockNumber, big.NewInt(oneExtraBlock))
-	log.Printf("Epoch start block: %d, Next block: %d", epochStartBlock.Uint64(), nextBlockNumber.Uint64())
+	// Seed the lottery from a block N positions past the epoch end. A
+	// single-block lookahead (endBlock+1) is vulnerable to short reorgs:
+	// two nodes voting milliseconds apart could see different hashes for
+	// the same block number if one observed a re-org tip. Voting at
+	// endBlock+ConfirmationDepth trades ~12s/depth of latency for much
+	// stronger cross-node agreement on the seed.
+	confirmationDepth := cProps.ConfirmationDepth
+	if confirmationDepth == 0 {
+		confirmationDepth = DefaultConfirmationDepth
+	}
+	nextBlockNumber := new(big.Int).Add(endEpochBlockNumber, new(big.Int).SetUint64(confirmationDepth))
+	log.Printf("Epoch start block: %d, Seed block (endBlock+%d): %d",
+		epochStartBlock.Uint64(), confirmationDepth, nextBlockNumber.Uint64())
 
 	// Wait for the next block to be available
 	var nextBlock *types.Header

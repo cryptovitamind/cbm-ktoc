@@ -119,11 +119,12 @@ func TestVoteAndReward_NoStakes(t *testing.T) {
 	cProps := &ConnectionProps{
 		Client:       mockClient,
 		Kt:           mockKt,
-		KtAddr:       common.HexToAddress("0x1234567890123456789012345678901234567890"),
-		MyPubKey:     common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
-		ChainID:      big.NewInt(1),
-		BlocksToWait: 0,
-		ChunkSize:    500,
+		KtAddr:            common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:          common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
+		ChainID:           big.NewInt(1),
+		BlocksToWait:      0,
+		ChunkSize:         500,
+		ConfirmationDepth: 1, // keep test's endBlock+1 expectation
 	}
 
 	privateKey, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
@@ -191,11 +192,12 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 	cProps := &ConnectionProps{
 		Client:       mockClient,
 		Kt:           mockKt,
-		KtAddr:       common.HexToAddress("0x1234567890123456789012345678901234567890"),
-		MyPubKey:     common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
-		ChainID:      big.NewInt(1),
-		BlocksToWait: 0,
-		ChunkSize:    500,
+		KtAddr:            common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:          common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
+		ChainID:           big.NewInt(1),
+		BlocksToWait:      0,
+		ChunkSize:         500,
+		ConfirmationDepth: 1, // keep test's endBlock+1 expectation
 	}
 
 	privateKey, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
@@ -533,4 +535,133 @@ func TestRewardWinningWallet_TlOcFeesFailurePropagates(t *testing.T) {
 	err := rewardWinningWallet(cProps, winner, totalMin)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "total OC fees")
+}
+
+// ============================================================================
+// Phase 6b — confirmation-depth tests.
+//
+// The lottery seed block is now `endBlock + cProps.ConfirmationDepth` (was
+// always +1 pre-Phase-6b). These tests pin both the configurable behavior
+// and the default-of-5 fallback so a future refactor can't quietly flip
+// either back.
+
+// TestCalculateVoteAndReward_UsesConfirmationDepthForSeedBlock — set
+// ConfirmationDepth = 7; assert HeaderByNumber is queried for endBlock+7
+// (not +1), and the hash from THAT block is what calcWinningWallet sees.
+func TestCalculateVoteAndReward_UsesConfirmationDepthForSeedBlock(t *testing.T) {
+	logrus.SetLevel(logrus.FatalLevel)
+
+	mockClient := &MockEthClient{}
+	mockKt := &MockKtv2{}
+	cProps := &ConnectionProps{
+		Client:            mockClient,
+		Kt:                mockKt,
+		KtAddr:            common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:          common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
+		ChainID:           big.NewInt(1),
+		BlocksToWait:      0,
+		ChunkSize:         500,
+		ConfirmationDepth: 7,
+	}
+	priv, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
+	cProps.MyPrivateKey = priv
+
+	stakerAddr := common.HexToAddress("0xabc123456789012345678901234567890123456")
+	startBlock := big.NewInt(50)
+	endBlock := big.NewInt(110)
+	seedBlockNum := new(big.Int).Add(endBlock, big.NewInt(7))
+
+	stakeDataMins := map[common.Address]*UserStakeData{
+		stakerAddr: {StakeAmount: big.NewInt(1000), Prob: new(big.Float).SetFloat64(1.0)},
+	}
+
+	// Capture the block hash that calcWinningWallet is called with.
+	expectedSeedHash := common.HexToHash("0xdeadbeef00000000000000000000000000000000000000000000000000000000")
+	var capturedHash common.Hash
+	origCalc := calcWinningWallet
+	SetCalculateWinningWallet(func(_ map[common.Address]*UserStakeData, h common.Hash) (common.Address, error) {
+		capturedHash = h
+		return stakerAddr, nil
+	})
+	defer SetCalculateWinningWallet(origCalc)
+
+	// HeaderByNumber must be queried at endBlock+7, NOT endBlock+1.
+	seedHeader := &types.Header{Number: seedBlockNum, ParentHash: expectedSeedHash}
+	// The block hash exposed by Hash() depends on header contents; rather than
+	// reconstruct it, assert the function asked for the right block number.
+	mockClient.On("HeaderByNumber", mock.Anything, seedBlockNum).Return(seedHeader, nil)
+
+	mockKt.On("Vote", mock.Anything, stakerAddr, mock.AnythingOfType("string")).Return(
+		types.NewTransaction(0, common.Address{}, big.NewInt(0), 0, big.NewInt(0), []byte{}), nil)
+	mockKt.On("BlockRwd", mock.Anything, startBlock, stakerAddr).Return(uint16(1), nil)
+	mockKt.On("ConsensusReq", mock.Anything).Return(uint16(5), nil) // vote insufficient → no reward
+	mockClient.On("TransactionReceipt", mock.Anything, mock.Anything).Return(
+		&types.Receipt{Status: types.ReceiptStatusSuccessful, BlockNumber: big.NewInt(112)}, nil)
+
+	// WaitForBlocks polls BlockNumber once even when BlocksToWait=0.
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(200), nil).Maybe()
+
+	_, err := calculateVoteAndReward(stakeDataMins, startBlock, endBlock, cProps, big.NewInt(1000))
+	assert.NoError(t, err)
+	mockClient.AssertCalled(t, "HeaderByNumber", mock.Anything, seedBlockNum)
+	if capturedHash != seedHeader.Hash() {
+		t.Errorf("calcWinningWallet got block hash %s, want %s (seed block %d's hash)",
+			capturedHash.Hex(), seedHeader.Hash().Hex(), seedBlockNum.Uint64())
+	}
+}
+
+// TestCalculateVoteAndReward_ZeroConfirmationDepthFallsBackToDefault —
+// when cProps.ConfirmationDepth is 0, the code uses DefaultConfirmationDepth.
+// Pin DefaultConfirmationDepth = 5.
+func TestCalculateVoteAndReward_ZeroConfirmationDepthFallsBackToDefault(t *testing.T) {
+	if DefaultConfirmationDepth != 5 {
+		t.Errorf("DefaultConfirmationDepth should be 5 (the operator-facing convention); got %d",
+			DefaultConfirmationDepth)
+	}
+
+	logrus.SetLevel(logrus.FatalLevel)
+	mockClient := &MockEthClient{}
+	mockKt := &MockKtv2{}
+	cProps := &ConnectionProps{
+		Client:       mockClient,
+		Kt:           mockKt,
+		KtAddr:       common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:     common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
+		ChainID:      big.NewInt(1),
+		BlocksToWait: 0,
+		ChunkSize:    500,
+		// ConfirmationDepth intentionally 0 → should use default.
+	}
+	priv, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
+	cProps.MyPrivateKey = priv
+
+	stakerAddr := common.HexToAddress("0xabc123456789012345678901234567890123456")
+	endBlock := big.NewInt(110)
+	expectedSeedNum := new(big.Int).Add(endBlock, big.NewInt(int64(DefaultConfirmationDepth)))
+
+	stakeDataMins := map[common.Address]*UserStakeData{
+		stakerAddr: {StakeAmount: big.NewInt(1000), Prob: new(big.Float).SetFloat64(1.0)},
+	}
+
+	origCalc := calcWinningWallet
+	SetCalculateWinningWallet(func(_ map[common.Address]*UserStakeData, _ common.Hash) (common.Address, error) {
+		return stakerAddr, nil
+	})
+	defer SetCalculateWinningWallet(origCalc)
+
+	mockClient.On("HeaderByNumber", mock.Anything, expectedSeedNum).Return(
+		&types.Header{Number: expectedSeedNum}, nil)
+	mockKt.On("Vote", mock.Anything, stakerAddr, mock.AnythingOfType("string")).Return(
+		types.NewTransaction(0, common.Address{}, big.NewInt(0), 0, big.NewInt(0), []byte{}), nil)
+	mockKt.On("BlockRwd", mock.Anything, big.NewInt(50), stakerAddr).Return(uint16(1), nil)
+	mockKt.On("ConsensusReq", mock.Anything).Return(uint16(5), nil)
+	mockClient.On("TransactionReceipt", mock.Anything, mock.Anything).Return(
+		&types.Receipt{Status: types.ReceiptStatusSuccessful, BlockNumber: big.NewInt(115)}, nil)
+
+	// WaitForBlocks polls BlockNumber once even when BlocksToWait=0.
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(200), nil).Maybe()
+
+	_, err := calculateVoteAndReward(stakeDataMins, big.NewInt(50), endBlock, cProps, big.NewInt(1000))
+	assert.NoError(t, err)
+	mockClient.AssertCalled(t, "HeaderByNumber", mock.Anything, expectedSeedNum)
 }

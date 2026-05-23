@@ -18,6 +18,12 @@ const (
 	DefaultBlocksToWait uint64        = 10
 	TimeToWaitForBlocks time.Duration = 5 * time.Second
 	DefaultChunkSize    int           = 500
+
+	// DefaultConfirmationDepth is the number of blocks past the epoch end
+	// the node waits before sampling the lottery seed. Larger = stronger
+	// reorg immunity, but more latency before voting can begin. 5 ≈ 1 min
+	// on a 12s/block chain; effectively immune to single-block reorgs.
+	DefaultConfirmationDepth uint64 = 5
 )
 
 type EthClient interface {
@@ -127,6 +133,10 @@ type ConnectionProps struct {
 	// process. Declines is a contract state read and rarely changes, so
 	// re-querying it every epoch is wasteful. Nil = first use will create it.
 	DeclinesCache map[common.Address]bool
+
+	// ConfirmationDepth — how many blocks past the epoch end to sample the
+	// lottery seed at (Phase 6b). Zero means "use DefaultConfirmationDepth".
+	ConfirmationDepth uint64
 }
 
 // Addresses holds Ethereum addresses and private keys from environment variables.
