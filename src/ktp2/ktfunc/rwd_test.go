@@ -1,6 +1,7 @@
 package ktfunc
 
 import (
+	"encoding/binary"
 	"errors"
 	"math/big"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.etcd.io/bbolt"
 )
 
 func TestParseStartEndBlocks(t *testing.T) {
@@ -539,4 +541,122 @@ func TestWithdrawOCFees_WithdrawOCFeeContractErrorPropagates(t *testing.T) {
 	err := WithdrawOCFees(cProps, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "withdrawOCFee")
+}
+
+// ============================================================================
+// Phase 5e — fees cache schema versioning tests. Mirror Phase 4c for the
+// chunks cache: operators never have to delete fees_*.db files manually.
+
+func TestFeesCache_WipesAndMigratesOnSchemaMismatch(t *testing.T) {
+	dbPath := t.TempDir() + "/legacy_fees.db"
+	db, err := bbolt.Open(dbPath, 0600, nil)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	// Seed a fees entry with the current key shape but no meta bucket /
+	// no schema_version marker — simulating an upgrade from a pre-versioning
+	// build that already wrote some entries.
+	addr := common.HexToAddress("0xabc123456789012345678901234567890123456")
+	err = db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucket([]byte("fees"))
+		if err != nil {
+			return err
+		}
+		key := make([]byte, common.AddressLength+1+8)
+		copy(key, addr.Bytes())
+		key[common.AddressLength] = '_'
+		binary.BigEndian.PutUint64(key[common.AddressLength+1:], uint64(18_000_000))
+		return b.Put(key, []byte("stale-fee-value"))
+	})
+	if err != nil {
+		t.Fatalf("seed legacy: %v", err)
+	}
+
+	if err := migrateOrInitFeesCacheSchema(db); err != nil {
+		t.Fatalf("first migrate: %v", err)
+	}
+
+	err = db.View(func(tx *bbolt.Tx) error {
+		fees := tx.Bucket([]byte("fees"))
+		if fees == nil {
+			t.Fatalf("fees bucket should exist after migration")
+		}
+		count := 0
+		_ = fees.ForEach(func(_, _ []byte) error { count++; return nil })
+		if count != 0 {
+			t.Errorf("expected fees bucket to be empty after wipe, has %d entries", count)
+		}
+		meta := tx.Bucket([]byte("meta"))
+		if meta == nil {
+			t.Fatalf("meta bucket should exist after migration")
+		}
+		v := meta.Get([]byte("schema_version"))
+		if len(v) != 4 {
+			t.Fatalf("schema_version should be 4 bytes, got %d", len(v))
+		}
+		if got := binary.BigEndian.Uint32(v); got != feesCacheSchemaVersion {
+			t.Errorf("schema_version = %d, want %d", got, feesCacheSchemaVersion)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("post-migration view: %v", err)
+	}
+
+	// Idempotency: second call should not re-wipe.
+	sentinelKey := []byte("sentinel-key-after-migration")
+	err = db.Update(func(tx *bbolt.Tx) error {
+		return tx.Bucket([]byte("fees")).Put(sentinelKey, []byte("sentinel"))
+	})
+	if err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	if err := migrateOrInitFeesCacheSchema(db); err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
+
+	err = db.View(func(tx *bbolt.Tx) error {
+		got := tx.Bucket([]byte("fees")).Get(sentinelKey)
+		if string(got) != "sentinel" {
+			t.Errorf("sentinel lost on second migrate; expected idempotent no-op")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("idempotency view: %v", err)
+	}
+}
+
+func TestFeesCache_FreshDBInitializesSchemaWithoutWipe(t *testing.T) {
+	dbPath := t.TempDir() + "/fresh_fees.db"
+	db, err := bbolt.Open(dbPath, 0600, nil)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	if err := migrateOrInitFeesCacheSchema(db); err != nil {
+		t.Fatalf("migrate on fresh DB: %v", err)
+	}
+
+	err = db.View(func(tx *bbolt.Tx) error {
+		if tx.Bucket([]byte("fees")) == nil {
+			t.Errorf("fees bucket missing on fresh DB")
+		}
+		meta := tx.Bucket([]byte("meta"))
+		if meta == nil {
+			t.Fatalf("meta bucket missing on fresh DB")
+		}
+		v := meta.Get([]byte("schema_version"))
+		if got := binary.BigEndian.Uint32(v); got != feesCacheSchemaVersion {
+			t.Errorf("schema_version = %d, want %d", got, feesCacheSchemaVersion)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("post-init view: %v", err)
+	}
 }

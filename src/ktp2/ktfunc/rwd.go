@@ -357,6 +357,68 @@ func parseWithdrawBlocks(blocks string) ([]uint32, error) {
 	return result, nil
 }
 
+// feesCacheSchemaVersion identifies the on-disk layout of cache/fees_*.db.
+// Bump this when the key format or bucket structure changes; the node
+// will self-heal by wiping and rebuilding on first run (operators never
+// have to delete files by hand).
+//
+// Versions:
+//   - 1 (current): single "fees" bucket; key = 20-byte addr + '_' + 8-byte
+//     BE block; value = raw big.Int.Bytes() of the fee. "meta" bucket
+//     holds the schema_version marker.
+const feesCacheSchemaVersion uint32 = 1
+
+// migrateOrInitFeesCacheSchema mirrors migrateOrInitCacheSchema (in
+// find_receiver.go) for the fees DB. Reads meta.schema_version; if
+// missing or older than feesCacheSchemaVersion, drops the fees and
+// meta buckets, recreates them, and writes the current version.
+func migrateOrInitFeesCacheSchema(db *bbolt.DB) error {
+	return db.Update(func(tx *bbolt.Tx) error {
+		var stored uint32
+		var hasStored bool
+		if meta := tx.Bucket([]byte("meta")); meta != nil {
+			if v := meta.Get([]byte("schema_version")); len(v) == 4 {
+				stored = binary.BigEndian.Uint32(v)
+				hasStored = true
+			}
+		}
+		if hasStored && stored == feesCacheSchemaVersion {
+			if _, err := tx.CreateBucketIfNotExists([]byte("fees")); err != nil {
+				return err
+			}
+			if _, err := tx.CreateBucketIfNotExists([]byte("meta")); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		if err := tx.DeleteBucket([]byte("fees")); err != nil && err != bbolt.ErrBucketNotFound {
+			return err
+		}
+		if err := tx.DeleteBucket([]byte("meta")); err != nil && err != bbolt.ErrBucketNotFound {
+			return err
+		}
+		if _, err := tx.CreateBucket([]byte("fees")); err != nil {
+			return err
+		}
+		meta, err := tx.CreateBucket([]byte("meta"))
+		if err != nil {
+			return err
+		}
+		buf := make([]byte, 4)
+		binary.BigEndian.PutUint32(buf, feesCacheSchemaVersion)
+		if err := meta.Put([]byte("schema_version"), buf); err != nil {
+			return err
+		}
+		if hasStored {
+			log.Infof("Fees cache schema migrated: was v%d, now v%d (cache wiped and rebuilt)", stored, feesCacheSchemaVersion)
+		} else {
+			log.Infof("Fees cache schema initialized at v%d", feesCacheSchemaVersion)
+		}
+		return nil
+	})
+}
+
 // openFeesDB opens the fees database and creates the bucket if needed.
 func openFeesDB(cProps *ConnectionProps) (*bbolt.DB, error) {
 	// Ensure cache directory exists
@@ -376,15 +438,12 @@ func openFeesDB(cProps *ConnectionProps) (*bbolt.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 	log.Debugf("Database opened successfully: %s", dbName)
-	// Create bucket if not exists
-	err = db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte("fees"))
-		return err
-	})
-	if err != nil {
+	// Self-heal across schema changes. Wipes orphaned data from older
+	// versions of the on-disk layout, then ensures buckets exist.
+	if err := migrateOrInitFeesCacheSchema(db); err != nil {
 		db.Close()
-		log.Errorf("Failed to create bucket: %v", err)
-		return nil, fmt.Errorf("failed to create bucket: %w", err)
+		log.Errorf("Failed to init/migrate fees cache schema: %v", err)
+		return nil, fmt.Errorf("failed to init/migrate fees cache schema: %w", err)
 	}
 	log.Debugf("Bucket 'fees' created or verified in database")
 	return db, nil
