@@ -38,52 +38,7 @@ func hashFromIndex(i int) common.Hash {
 	return h
 }
 
-func TestVoteAndReward_FreshMidEpochDepositorDoesNotAutoWin_Linear(t *testing.T) {
-	// 9 baseline stakers (all entered pre-epoch with equal stake).
-	// 1 newcomer who joins mid-epoch with a huge deposit. Under correct
-	// semantics their min stake is 0 — they should NEVER win.
-
-	stakeDataMap := make(map[common.Address]map[uint64]*ktfunc.UserStakeData)
-
-	for i := 1; i <= 9; i++ {
-		addr := common.HexToAddress(fmt.Sprintf("0x%040x", i))
-		stakeDataMap[addr] = map[uint64]*ktfunc.UserStakeData{
-			50: {StakeAmount: big.NewInt(1000)},
-		}
-	}
-	newcomer := common.HexToAddress("0x00000000000000000000000000000000000000FF")
-	stakeDataMap[newcomer] = map[uint64]*ktfunc.UserStakeData{
-		150: {StakeAmount: big.NewInt(1_000_000)},
-	}
-
-	const samples = 200
-	const epochStart, epochEnd = uint64(100), uint64(200)
-
-	newcomerWins := 0
-	for i := 0; i < samples; i++ {
-		// Need a fresh map per call: VerifyWinnerCalculation mutates
-		// the inner *UserStakeData (probabilities), and findMinOverBlockRange
-		// reads/writes through it.
-		fresh := cloneStakeMap(stakeDataMap)
-		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i), true /*useLinear*/)
-		if err != nil {
-			t.Fatalf("VerifyWinnerCalculation: %v", err)
-		}
-		if result.CalculatedWinner == newcomer {
-			newcomerWins++
-		}
-	}
-
-	// True semantics: newcomer's min is 0 → excluded → 0 wins.
-	// Bug today: newcomer dominates probability mass under linear → ~all wins.
-	maxAllowedWinPct := 25.0
-	winPct := 100.0 * float64(newcomerWins) / float64(samples)
-	if winPct > maxAllowedWinPct {
-		t.Errorf("FAIL (reproduces bug): newcomer who only staked mid-epoch won %d/%d (%.1f%%) of epochs; "+
-			"expected <%.0f%% because their true min stake during the epoch is 0",
-			newcomerWins, samples, winPct, maxAllowedWinPct)
-	}
-}
+// (Phase 6a: removed _Linear variant. Log is now the only mode.)
 
 func TestVoteAndReward_FreshMidEpochDepositorDoesNotAutoWin_Log(t *testing.T) {
 	// Same scenario as above but with log-normalized probabilities. The
@@ -112,7 +67,7 @@ func TestVoteAndReward_FreshMidEpochDepositorDoesNotAutoWin_Log(t *testing.T) {
 	newcomerWins := 0
 	for i := 0; i < samples; i++ {
 		fresh := cloneStakeMap(stakeDataMap)
-		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i), false /*useLinear=false → log*/)
+		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i))
 		if err != nil {
 			t.Fatalf("VerifyWinnerCalculation: %v", err)
 		}
@@ -157,7 +112,7 @@ func TestVoteAndReward_TopUpMidEpochDoesNotInflateWeight(t *testing.T) {
 	cWins := 0
 	for i := 0; i < samples; i++ {
 		fresh := cloneStakeMap(stakeDataMap)
-		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i), true /*linear*/)
+		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i))
 		if err != nil {
 			t.Fatalf("VerifyWinnerCalculation: %v", err)
 		}

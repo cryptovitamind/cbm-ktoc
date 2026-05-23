@@ -22,7 +22,6 @@ type verifyTestInput struct {
 	epochEnd      uint64
 	blockHash     common.Hash
 	stakeDataMap  map[common.Address]map[uint64]*UserStakeData
-	useLinear     bool
 }
 
 func buildSimpleStakeDataMap(addr common.Address, stakeBlock uint64, amount int64) map[common.Address]map[uint64]*UserStakeData {
@@ -61,7 +60,6 @@ func TestVerifyWinnerCalculation_SingleStaker(t *testing.T) {
 		50,  // epochStart
 		110, // epochEnd
 		blockHash,
-		false, // useLinear (log normalization)
 	)
 
 	assert.NoError(t, err)
@@ -92,7 +90,6 @@ func TestVerifyWinnerCalculation_MultipleStakers(t *testing.T) {
 		50,
 		110,
 		blockHash,
-		true, // linear probs
 	)
 
 	assert.NoError(t, err)
@@ -116,7 +113,6 @@ func TestVerifyWinnerCalculation_MatchesOnChainWinner(t *testing.T) {
 		50,
 		110,
 		common.Hash{}, // all zeros
-		false,
 	)
 
 	assert.NoError(t, err)
@@ -136,53 +132,15 @@ func TestVerifyWinnerCalculation_EmptyStakes(t *testing.T) {
 		50,
 		110,
 		common.Hash{},
-		false,
 	)
 
 	assert.NoError(t, err)
 	assert.Equal(t, common.Address{}, result.CalculatedWinner)
 }
 
-// TestVerifyWinnerCalculation_LinearVsLog tests that switching between linear and log
-// probability modes can produce different winners.
-func TestVerifyWinnerCalculation_LinearVsLog(t *testing.T) {
-	logrus.SetLevel(logrus.FatalLevel)
-
-	addr1 := common.HexToAddress("0x1000000000000000000000000000000000000001")
-	addr2 := common.HexToAddress("0x2000000000000000000000000000000000000002")
-
-	// addr1 has a very small stake, addr2 has a huge stake
-	// Log normalization will give addr1 a higher relative probability than linear
-	stakeDataMap := buildMultiStakeDataMap(map[common.Address]map[uint64]int64{
-		addr1: {40: 10},
-		addr2: {40: 10000000},
-	})
-
-	// Use a block hash that gives a randFloat around 0.5
-	blockHash := common.Hash{0x80}
-
-	resultLinear, err := VerifyWinnerCalculation(stakeDataMap, 50, 110, blockHash, true)
-	assert.NoError(t, err)
-
-	// Rebuild map since probs get mutated
-	stakeDataMap = buildMultiStakeDataMap(map[common.Address]map[uint64]int64{
-		addr1: {40: 10},
-		addr2: {40: 10000000},
-	})
-
-	resultLog, err := VerifyWinnerCalculation(stakeDataMap, 50, 110, blockHash, false)
-	assert.NoError(t, err)
-
-	// With linear probs, addr1 has ~0.000001 probability so addr2 almost certainly wins
-	// With log probs, addr1 has a much larger relative probability
-	// At randFloat=0.5, linear should pick addr2, log might pick either
-	// This test verifies the prob mode affects the outcome
-	assert.Equal(t, addr2, resultLinear.CalculatedWinner,
-		"With linear probs and randFloat=0.5, the high-stake addr should win")
-	// We don't assert the log result equals a specific addr since it depends on the exact math,
-	// but we verify the function completes without error
-	assert.NotEqual(t, common.Address{}, resultLog.CalculatedWinner)
-}
+// (Phase 6a: removed TestVerifyWinnerCalculation_LinearVsLog. The linear
+//  mode was eliminated to stop different operators silently computing
+//  different winners. Log is the only mode.)
 
 // TestVerifyWinnerCalculation_StakesOutsideEpoch tests that stakes outside the epoch range
 // are handled correctly (pre-epoch stakes count, post-epoch events are excluded by endBlock).
@@ -206,7 +164,6 @@ func TestVerifyWinnerCalculation_StakesOutsideEpoch(t *testing.T) {
 		50,
 		110,
 		common.Hash{}, // randFloat=0
-		true,          // linear
 	)
 
 	assert.NoError(t, err)
@@ -223,7 +180,6 @@ func TestVerifyWinnerCalculation_NilMap(t *testing.T) {
 		50,
 		110,
 		common.Hash{},
-		false,
 	)
 
 	assert.Error(t, err)

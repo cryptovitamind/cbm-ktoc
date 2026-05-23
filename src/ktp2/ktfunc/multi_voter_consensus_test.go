@@ -29,7 +29,7 @@ func createMockStakeDataMins() map[common.Address]*UserStakeData {
 		}
 	}
 	// Pre-calculate probs
-	calculateProbsForEachWallet(stakes, totalMin, true)
+	calculateProbsForEachWallet(stakes, totalMin)
 	return stakes
 }
 
@@ -266,7 +266,7 @@ func TestDeclinedStakerNotSelected(t *testing.T) {
 	}
 
 	// Calculate probs
-	calculateProbsForEachWallet(stakeDataMins, totalMin, true)
+	calculateProbsForEachWallet(stakeDataMins, totalMin)
 
 	// Create a block hash that would select the second address if it existed
 	// But since it's filtered out, it should select addr1

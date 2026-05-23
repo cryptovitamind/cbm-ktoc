@@ -74,7 +74,6 @@ type Flags struct {
 	printStakeEvents      string
 	currentBlock          bool
 	waitDuration          time.Duration
-	linearProbs           bool
 	verifyLastWinner      bool
 }
 
@@ -189,7 +188,6 @@ func parseFlags() Flags {
 	dataForOCVote := flag.String("dataForOCVote", "", "Data string for the OC vote (required if using voting flags)")
 	printOCVoteEvents := flag.String("printOCVoteEvents", "", "Print all OC vote events between <fromBlock>:<toBlock>")
 
-	linearProbs := flag.Bool("linearProbs", false, "Use linear probability normalization instead of log normalization (which skews towards smaller wallets).")
 	verifyLastWinner := flag.Bool("verifyLastWinner", false, "Verify that the last rewarded winner was correctly and fairly selected by replaying the winner calculation.")
 
 	// Testing Commands (for development and testing)
@@ -286,7 +284,6 @@ func parseFlags() Flags {
 		printOCVoteEvents:     *printOCVoteEvents,
 		dataForOCVote:         *dataForOCVote,
 		printStakeEvents:      *printStakeEvents,
-		linearProbs:           *linearProbs,
 		verifyLastWinner:      *verifyLastWinner,
 	}
 }
@@ -639,7 +636,6 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 	}
 
 	cProps.WaitDuration = duration
-	cProps.UseLinearProbs = flags.linearProbs
 
 	// Set QueryDelay from environment variable or default to 100ms
 	queryDelayMs := 100 // Default to 100ms

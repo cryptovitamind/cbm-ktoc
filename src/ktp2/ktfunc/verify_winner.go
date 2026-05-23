@@ -16,14 +16,17 @@ type VerificationResult struct {
 	Match            bool
 }
 
-// VerifyWinnerCalculation replays the winner selection algorithm using the provided
-// stake data, epoch range, block hash, and probability mode. It returns the calculated
+// VerifyWinnerCalculation replays the winner-selection algorithm using the
+// provided stake data, epoch range, and block hash. Returns the calculated
 // winner so it can be compared against the on-chain result.
+//
+// The previous `useLinear bool` parameter was removed in Phase 6a — the
+// node now always log-normalizes, eliminating the silent operator-config
+// divergence that caused multiple voters to disagree in the field.
 func VerifyWinnerCalculation(
 	stakeDataMap map[common.Address]map[uint64]*UserStakeData,
 	epochStart, epochEnd uint64,
 	blockHash common.Hash,
-	useLinear bool,
 ) (*VerificationResult, error) {
 	if stakeDataMap == nil {
 		return nil, fmt.Errorf("stake data map is nil")
@@ -44,7 +47,7 @@ func VerifyWinnerCalculation(
 	}
 
 	// Calculate probabilities for each wallet
-	calculateProbsForEachWallet(stakeDataMinsMap, totalMin, useLinear)
+	calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
 
 	// Select winner using the same deterministic algorithm
 	winner, err := defaultCalculateWinningWallet(stakeDataMinsMap, blockHash)
@@ -198,7 +201,6 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 		votedEpochStart.Uint64(),
 		endBlock.Uint64(),
 		blockHash,
-		cProps.UseLinearProbs,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to verify winner calculation: %w", err)
@@ -215,9 +217,9 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 	} else {
 		log.Warn("  MISMATCH: The calculated winner does not match the on-chain winner!")
 		log.Warn("  Possible causes:")
-		log.Warn("    - the epoch was rewarded before the min-stake fix shipped, so the")
-		log.Warn("      on-chain winner was selected by the buggy pre-fix algorithm;")
-		log.Warn("    - a different probability mode was used at vote time (try -linearProbs);")
+		log.Warn("    - the epoch was rewarded before the min-stake or withdraw-erasure")
+		log.Warn("      fix shipped, so the on-chain winner was selected by a pre-fix algorithm;")
+		log.Warn("    - the voting node was running with a different code version (check banner);")
 		log.Warn("    - contract state (e.g., declines) has changed since the epoch was rewarded.")
 	}
 	log.Info("==========================================")

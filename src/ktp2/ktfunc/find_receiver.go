@@ -145,7 +145,7 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	}
 
 	// Calculate probabilities for each wallet
-	calculateProbsForEachWallet(stakeDataMinsMap, totalMin, cProps.UseLinearProbs)
+	calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
 	if totalMin.Cmp(big.NewInt(0)) == 0 {
 		log.Warn("No valid stakes detected - will vote for dead address.")
 	}
@@ -471,45 +471,33 @@ func logNormalizeProbabilities(stakeDataMinsMap map[common.Address]*UserStakeDat
 	return nil
 }
 
-func calculateProbsForEachWallet(stakeDataMinsMap map[common.Address]*UserStakeData, totalMin *big.Int, useLinear bool) bool {
-	foundSomething := false
+// calculateProbsForEachWallet assigns a log-normalized probability to each
+// wallet in stakeDataMinsMap. The linear-mode option (and the `-linearProbs`
+// CLI flag that drove it) was removed in Phase 6a — it was a per-operator
+// switch with no on-chain record, so different operators silently computed
+// different winners. Log normalization is now the only supported mode:
+// larger stakers still win more often, but with strongly diminishing
+// returns so whales don't drown out smaller wallets.
+func calculateProbsForEachWallet(stakeDataMinsMap map[common.Address]*UserStakeData, totalMin *big.Int) bool {
+	_ = totalMin // kept in signature for call-site symmetry; log path doesn't use it.
 
 	if stakeDataMinsMap == nil || len(stakeDataMinsMap) == 0 {
 		log.Warn("Stake data map is nil or empty - Cannot calculate probabilities")
 		return false
 	}
 
-	if useLinear {
-		// Linear normalization: prob = stake / total
-		if totalMin.Cmp(big.NewInt(0)) == 0 {
-			log.Warn("Total minimum stake is zero - Cannot calculate probabilities")
-			return false
-		}
-
-		for addr, stakeData := range stakeDataMinsMap {
-			foundSomething = true
-			stakeFloat := new(big.Float).SetInt(stakeData.StakeAmount)
-			totalFloat := new(big.Float).SetInt(totalMin)
-			stakeData.Prob = new(big.Float).Quo(stakeFloat, totalFloat)
-			log.Debugf("Address: %s, Linear Probability: %f\n", addr.Hex(), stakeData.Prob)
-		}
-	} else {
-		// Log-scale normalization: still favors larger stakers but compresses
-		// the disparity so smaller wallets aren't drowned out by whales.
-		err := logNormalizeProbabilities(stakeDataMinsMap)
-		if err != nil {
-			log.Errorf("Failed to log normalize probabilities: %v", err)
-			return false
-		}
-
-		for addr, stakeData := range stakeDataMinsMap {
-			if stakeData.Prob != nil {
-				foundSomething = true
-				log.Debugf("Address: %s, Log-normalized Probability: %f\n", addr.Hex(), stakeData.Prob)
-			}
-		}
+	if err := logNormalizeProbabilities(stakeDataMinsMap); err != nil {
+		log.Errorf("Failed to log normalize probabilities: %v", err)
+		return false
 	}
 
+	foundSomething := false
+	for addr, stakeData := range stakeDataMinsMap {
+		if stakeData.Prob != nil {
+			foundSomething = true
+			log.Debugf("Address: %s, Log-normalized Probability: %f\n", addr.Hex(), stakeData.Prob)
+		}
+	}
 	return foundSomething
 }
 

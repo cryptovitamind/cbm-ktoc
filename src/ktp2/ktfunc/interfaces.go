@@ -123,8 +123,6 @@ type ConnectionProps struct {
 	V2Uniswap      bool                 // If true, use Uniswap V2, else V1.
 	ChunkSize      int                  // Size of chunks for processing large data sets
 	WaitDuration   time.Duration        // Duration to wait between operations
-	UseLinearProbs bool                 // If true, use linear probability normalization; otherwise, use log normalization (default: log)
-
 	// DeclinesCache memoizes Declines() lookups for the lifetime of the
 	// process. Declines is a contract state read and rarely changes, so
 	// re-querying it every epoch is wasteful. Nil = first use will create it.
