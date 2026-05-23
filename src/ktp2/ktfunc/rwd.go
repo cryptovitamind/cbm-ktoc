@@ -58,7 +58,7 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 			return nil, fmt.Errorf("failed to filter Voted events: %v", err)
 		}
 		for votedIter.Next() {
-			event := votedIter.Event
+			event := votedIter.Event()
 			// Get tx details to check sender
 			tx, isPending, err := cProps.Client.TransactionByHash(context.Background(), event.Raw.TxHash)
 			if err != nil {
@@ -97,7 +97,7 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 			return nil, fmt.Errorf("failed to filter Rwd events: %v", err)
 		}
 		for rwdIter.Next() {
-			event := rwdIter.Event
+			event := rwdIter.Event()
 			// Get tx details to check sender
 			tx, isPending, err := cProps.Client.TransactionByHash(context.Background(), event.Raw.TxHash)
 			if err != nil {

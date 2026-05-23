@@ -6,8 +6,6 @@ import (
 	"math/big"
 	"testing"
 
-	"ktp2/src/abis/ktv2"
-
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -204,15 +202,23 @@ func (m *MockKtv2) Withdraw(opts *bind.TransactOpts, amount *big.Int) (*types.Tr
 }
 
 // FilterRwd mock
-func (m *MockKtv2) FilterRwd(opts *bind.FilterOpts) (*ktv2.Ktv2RwdIterator, error) {
+func (m *MockKtv2) FilterRwd(opts *bind.FilterOpts) (RwdIterator, error) {
 	args := m.Called(opts)
-	return args.Get(0).(*ktv2.Ktv2RwdIterator), args.Error(1)
+	v := args.Get(0)
+	if v == nil {
+		return nil, args.Error(1)
+	}
+	return v.(RwdIterator), args.Error(1)
 }
 
 // FilterVoted mock
-func (m *MockKtv2) FilterVoted(opts *bind.FilterOpts) (*ktv2.Ktv2VotedIterator, error) {
+func (m *MockKtv2) FilterVoted(opts *bind.FilterOpts) (VotedIterator, error) {
 	args := m.Called(opts)
-	return args.Get(0).(*ktv2.Ktv2VotedIterator), args.Error(1)
+	v := args.Get(0)
+	if v == nil {
+		return nil, args.Error(1)
+	}
+	return v.(VotedIterator), args.Error(1)
 }
 
 // OcRwdrs mock

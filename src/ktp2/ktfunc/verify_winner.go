@@ -106,7 +106,7 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 	var lastRwdBlock uint64
 	found := false
 	for rwdIter.Next() {
-		evt := rwdIter.Event
+		evt := rwdIter.Event()
 		if evt == nil {
 			continue
 		}
@@ -152,7 +152,7 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 	var votedBlockHash string
 	var votedFound bool
 	for votedIter.Next() {
-		evt := votedIter.Event
+		evt := votedIter.Event()
 		if evt == nil {
 			continue
 		}

@@ -48,6 +48,20 @@ type WithdrewIterator interface {
 	Close() error
 }
 
+type VotedIterator interface {
+	Next() bool
+	Event() *ktv2.Ktv2Voted
+	Error() error
+	Close() error
+}
+
+type RwdIterator interface {
+	Next() bool
+	Event() *ktv2.Ktv2Rwd
+	Error() error
+	Close() error
+}
+
 type Ktv2Interface interface {
 	StartBlock(opts *bind.CallOpts) (*big.Int, error)
 	EpochInterval(opts *bind.CallOpts) (uint16, error)
@@ -82,8 +96,8 @@ type Ktv2Interface interface {
 	Stake(opts *bind.TransactOpts, amount *big.Int) (*types.Transaction, error)
 	Withdraw(opts *bind.TransactOpts, amount *big.Int) (*types.Transaction, error)
 
-	FilterRwd(opts *bind.FilterOpts) (*ktv2.Ktv2RwdIterator, error)
-	FilterVoted(opts *bind.FilterOpts) (*ktv2.Ktv2VotedIterator, error)
+	FilterRwd(opts *bind.FilterOpts) (RwdIterator, error)
+	FilterVoted(opts *bind.FilterOpts) (VotedIterator, error)
 
 	OcRwdrs(opts *bind.CallOpts, address common.Address) (bool, error)
 	Declines(opts *bind.CallOpts, address common.Address) (bool, error)
@@ -181,4 +195,44 @@ func (w *Ktv2Wrapper) FilterWithdrew(opts *bind.FilterOpts) (WithdrewIterator, e
 		return nil, err
 	}
 	return &WithdrewIteratorWrapper{iter}, nil
+}
+
+type VotedIteratorWrapper struct {
+	*ktv2.Ktv2VotedIterator
+}
+
+func (w *VotedIteratorWrapper) Event() *ktv2.Ktv2Voted {
+	return w.Ktv2VotedIterator.Event
+}
+
+func (w *VotedIteratorWrapper) Close() error {
+	return w.Ktv2VotedIterator.Close()
+}
+
+type RwdIteratorWrapper struct {
+	*ktv2.Ktv2RwdIterator
+}
+
+func (w *RwdIteratorWrapper) Event() *ktv2.Ktv2Rwd {
+	return w.Ktv2RwdIterator.Event
+}
+
+func (w *RwdIteratorWrapper) Close() error {
+	return w.Ktv2RwdIterator.Close()
+}
+
+func (w *Ktv2Wrapper) FilterVoted(opts *bind.FilterOpts) (VotedIterator, error) {
+	iter, err := w.Ktv2.FilterVoted(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &VotedIteratorWrapper{iter}, nil
+}
+
+func (w *Ktv2Wrapper) FilterRwd(opts *bind.FilterOpts) (RwdIterator, error) {
+	iter, err := w.Ktv2.FilterRwd(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &RwdIteratorWrapper{iter}, nil
 }
