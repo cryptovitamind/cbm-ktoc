@@ -48,9 +48,24 @@ func (f *FakeKtv2) FilterWithdrew(opts *bind.FilterOpts) (ktfunc.WithdrewIterato
 type FakeEthClient struct {
 	ktfunc.EthClient // nil; any non-overridden call will panic
 
-	CodeAtFn      func(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error)
-	BlockNumberFn func(ctx context.Context) (uint64, error)
-	FilterLogsFn  func(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+	CodeAtFn         func(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error)
+	BlockNumberFn    func(ctx context.Context) (uint64, error)
+	FilterLogsFn     func(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+	HeaderByNumberFn func(ctx context.Context, number *big.Int) (*types.Header, error)
+}
+
+func (f *FakeEthClient) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	if f.HeaderByNumberFn != nil {
+		return f.HeaderByNumberFn(ctx, number)
+	}
+	// Default: pretend the chain advanced past whatever was asked. Returning
+	// a header with the requested number gives any tipHash-capture path
+	// something deterministic to work with; tests that care about the
+	// returned hash should set HeaderByNumberFn explicitly.
+	if number == nil {
+		return &types.Header{Number: big.NewInt(0)}, nil
+	}
+	return &types.Header{Number: new(big.Int).Set(number)}, nil
 }
 
 func (f *FakeEthClient) CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error) {

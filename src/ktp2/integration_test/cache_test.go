@@ -19,6 +19,7 @@ package integration_test
 // After Phase 3 (tip-pointer cache) this test will pass.
 
 import (
+	"context"
 	"math/big"
 	"os"
 	"sync"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 func TestGatherStakesAndWithdraws_DoesNotRefetchPreviouslyCachedBlocks(t *testing.T) {
@@ -108,5 +110,113 @@ func TestGatherStakesAndWithdraws_DoesNotRefetchPreviouslyCachedBlocks(t *testin
 				"block %d already cached by the first call",
 				r.Start, r.End, definitelyCachedBlock)
 		}
+	}
+}
+
+// TestGatherStakesAndWithdraws_DetectsReorgAndRebuildsCache — pins
+// Phase 6g. The cache stores tipHash alongside the tip pointer. If
+// the chain's hash at tip changes between calls (i.e. a reorg
+// dropped or rewrote events past the cached point), the second call
+// must wipe the chunks bucket and re-fetch.
+func TestGatherStakesAndWithdraws_DetectsReorgAndRebuildsCache(t *testing.T) {
+	tmp := t.TempDir()
+	oldwd, _ := os.Getwd()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	contractAddr := common.HexToAddress("0x000000000000000000000000000000000000FACE")
+	cProps := &ktfunc.ConnectionProps{
+		KtAddr:    contractAddr,
+		ChunkSize: 500,
+	}
+
+	hashBefore := common.HexToHash("0xaaaa000000000000000000000000000000000000000000000000000000000000")
+	fakeClient := &FakeEthClient{
+		HeaderByNumberFn: func(_ context.Context, n *big.Int) (*types.Header, error) {
+			return &types.Header{Number: new(big.Int).Set(n), ParentHash: hashBefore}, nil
+		},
+	}
+	cProps.Client = fakeClient
+
+	var stakedQueries int
+	fakeKt := &FakeKtv2{}
+	fakeKt.FilterStakedFn = func(opts *bind.FilterOpts) (ktfunc.StakedIterator, error) {
+		stakedQueries++
+		return &stakedIter{}, nil
+	}
+	fakeKt.FilterWithdrewFn = func(opts *bind.FilterOpts) (ktfunc.WithdrewIterator, error) {
+		return &withdrewIter{}, nil
+	}
+
+	if _, err := ktfunc.GatherStakesAndWithdraws(cProps, fakeKt, big.NewInt(100), big.NewInt(599)); err != nil {
+		t.Fatalf("first gather: %v", err)
+	}
+	if stakedQueries == 0 {
+		t.Fatalf("test setup wrong: expected at least one FilterStaked call on first scan")
+	}
+
+	// Simulate reorg: header now reports a different ParentHash for the
+	// same block number, flipping its Hash().
+	hashAfter := common.HexToHash("0xbbbb000000000000000000000000000000000000000000000000000000000000")
+	fakeClient.HeaderByNumberFn = func(_ context.Context, n *big.Int) (*types.Header, error) {
+		return &types.Header{Number: new(big.Int).Set(n), ParentHash: hashAfter}, nil
+	}
+	stakedQueries = 0
+
+	if _, err := ktfunc.GatherStakesAndWithdraws(cProps, fakeKt, big.NewInt(100), big.NewInt(599)); err != nil {
+		t.Fatalf("second gather: %v", err)
+	}
+	if stakedQueries == 0 {
+		t.Errorf("expected reorg detection to wipe cache and re-fetch; got %d new queries", stakedQueries)
+	}
+}
+
+// TestGatherStakesAndWithdraws_NoReorgKeepsCache — same shape but the
+// header hash is stable; the second call should hit the cache (zero
+// new FilterStaked queries).
+func TestGatherStakesAndWithdraws_NoReorgKeepsCache(t *testing.T) {
+	tmp := t.TempDir()
+	oldwd, _ := os.Getwd()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	contractAddr := common.HexToAddress("0x000000000000000000000000000000000000C0DE")
+	cProps := &ktfunc.ConnectionProps{
+		KtAddr:    contractAddr,
+		ChunkSize: 500,
+	}
+
+	stableParent := common.HexToHash("0xcccc000000000000000000000000000000000000000000000000000000000000")
+	fakeClient := &FakeEthClient{
+		HeaderByNumberFn: func(_ context.Context, n *big.Int) (*types.Header, error) {
+			return &types.Header{Number: new(big.Int).Set(n), ParentHash: stableParent}, nil
+		},
+	}
+	cProps.Client = fakeClient
+
+	var stakedQueries int
+	fakeKt := &FakeKtv2{}
+	fakeKt.FilterStakedFn = func(opts *bind.FilterOpts) (ktfunc.StakedIterator, error) {
+		stakedQueries++
+		return &stakedIter{}, nil
+	}
+	fakeKt.FilterWithdrewFn = func(opts *bind.FilterOpts) (ktfunc.WithdrewIterator, error) {
+		return &withdrewIter{}, nil
+	}
+
+	if _, err := ktfunc.GatherStakesAndWithdraws(cProps, fakeKt, big.NewInt(100), big.NewInt(599)); err != nil {
+		t.Fatalf("first gather: %v", err)
+	}
+	stakedQueries = 0
+
+	if _, err := ktfunc.GatherStakesAndWithdraws(cProps, fakeKt, big.NewInt(100), big.NewInt(599)); err != nil {
+		t.Fatalf("second gather: %v", err)
+	}
+	if stakedQueries != 0 {
+		t.Errorf("expected cache to serve the repeat call; got %d new FilterStaked queries", stakedQueries)
 	}
 }

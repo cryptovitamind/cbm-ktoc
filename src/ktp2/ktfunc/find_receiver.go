@@ -909,17 +909,58 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 	startU := startBlock.Uint64()
 	endU := endBlock.Uint64()
 
-	// Read tip.
+	// Read tip + tipHash. tipHash drives the Phase 6g reorg check below.
 	var tip uint64
+	var tipHash common.Hash
+	var hasTipHash bool
 	_ = db.View(func(tx *bbolt.Tx) error {
 		if b := tx.Bucket([]byte("meta")); b != nil {
 			if v := b.Get([]byte("tip")); len(v) == 8 {
 				tip = binary.BigEndian.Uint64(v)
 			}
+			if v := b.Get([]byte("tip_hash")); len(v) == common.HashLength {
+				copy(tipHash[:], v)
+				hasTipHash = true
+			}
 		}
 		return nil
 	})
-	log.Debugf("Cache tip on entry: %d", tip)
+	log.Debugf("Cache tip on entry: %d (tipHash present: %v)", tip, hasTipHash)
+
+	// Reorg detector (Phase 6g). If we have a tip and a recorded tipHash,
+	// confirm the canonical chain still has that hash at that block. A
+	// mismatch indicates a reorg dropped or rewrote the cached events;
+	// wipe the chunks bucket and start over.
+	if tip > 0 && hasTipHash {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		current, hdrErr := cProps.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(tip))
+		cancel()
+		if hdrErr != nil {
+			log.Warnf("Reorg check skipped (HeaderByNumber(%d) failed): %v", tip, hdrErr)
+		} else if current != nil && current.Hash() != tipHash {
+			log.Warnf("Reorg detected at cache tip %d: cached=%s, on-chain=%s — wiping chunks and rebuilding",
+				tip, tipHash.Hex(), current.Hash().Hex())
+			if wErr := db.Update(func(tx *bbolt.Tx) error {
+				if err := tx.DeleteBucket([]byte("chunks")); err != nil && err != bbolt.ErrBucketNotFound {
+					return err
+				}
+				if _, err := tx.CreateBucket([]byte("chunks")); err != nil {
+					return err
+				}
+				b := tx.Bucket([]byte("meta"))
+				if b != nil {
+					_ = b.Delete([]byte("tip"))
+					_ = b.Delete([]byte("tip_hash"))
+				}
+				return nil
+			}); wErr != nil {
+				log.Errorf("Failed to wipe cache after reorg: %v", wErr)
+				return nil, fmt.Errorf("failed to wipe cache after reorg: %w", wErr)
+			}
+			tip = 0
+			hasTipHash = false
+		}
+	}
 
 	chunkKey := func(chunkStart uint64) []byte {
 		k := make([]byte, 8)
@@ -957,11 +998,33 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 		if newTip <= tip {
 			return nil
 		}
+		// Capture the hash of the new tip block so a future call can detect
+		// a reorg. If HeaderByNumber fails or the block isn't yet visible,
+		// log and continue — we'd rather have a slightly-less-protected
+		// cache than fail the whole vote cycle.
+		var newTipHash common.Hash
+		hashCaptured := false
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		hdr, hErr := cProps.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(newTip))
+		cancel()
+		if hErr == nil && hdr != nil {
+			newTipHash = hdr.Hash()
+			hashCaptured = true
+		} else if hErr != nil {
+			log.Debugf("Could not capture tipHash for block %d: %v", newTip, hErr)
+		}
+
 		err := db.Update(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte("meta"))
 			buf := make([]byte, 8)
 			binary.BigEndian.PutUint64(buf, newTip)
-			return b.Put([]byte("tip"), buf)
+			if err := b.Put([]byte("tip"), buf); err != nil {
+				return err
+			}
+			if hashCaptured {
+				return b.Put([]byte("tip_hash"), newTipHash[:])
+			}
+			return nil
 		})
 		if err == nil {
 			tip = newTip
@@ -1065,9 +1128,13 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 //   - 1 (implicit; pre-Phase-3): chunks bucket only, keys = 16-byte BE
 //     (chunkStart, chunkEnd). No meta bucket. Trailing-chunk keys shifted
 //     every epoch — orphaned by the Phase 3 cache rewrite.
-//   - 2 (current): chunks bucket with 8-byte BE chunkStart keys; meta
-//     bucket with "tip" pointer and this "schema_version" marker.
-const cacheSchemaVersion uint32 = 2
+//   - 2 (Phase 3): chunks bucket with 8-byte BE chunkStart keys; meta
+//     bucket with "tip" pointer and "schema_version" marker.
+//   - 3 (Phase 6g, current): adds "tip_hash" alongside "tip" in the meta
+//     bucket so the node can detect a reorg at startup by comparing the
+//     cached tipHash against the current chain. If hashes mismatch, the
+//     cache is wiped and rebuilt.
+const cacheSchemaVersion uint32 = 3
 
 // migrateOrInitCacheSchema reads the schema_version marker from the meta
 // bucket. If it's missing or older than cacheSchemaVersion, both buckets

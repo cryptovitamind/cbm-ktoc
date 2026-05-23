@@ -151,6 +151,10 @@ func TestVoteAndReward_NoStakes(t *testing.T) {
 	// Mock next block for voting
 	nextHeader := &types.Header{Number: big.NewInt(111)}
 	mockClient.On("HeaderByNumber", mock.Anything, big.NewInt(111)).Return(nextHeader, nil)
+	// Phase 6g: realGatherStakesAndWithdraws now also calls HeaderByNumber
+	// when advancing the cache tip (to record tipHash). Catchall for any
+	// other block number queries; specific mocks above still take precedence.
+	mockClient.On("HeaderByNumber", mock.Anything, mock.Anything).Return(&types.Header{}, nil).Maybe()
 
 	// Mock empty stake and withdraw iterators
 	emptyStakedIter := &MockStakedIterator{events: []*ktv2.Ktv2Staked{}}
@@ -224,6 +228,8 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 	// Mock next block
 	nextHeader := &types.Header{Number: big.NewInt(111)}
 	mockClient.On("HeaderByNumber", mock.Anything, big.NewInt(111)).Return(nextHeader, nil)
+	// Phase 6g catchall (see TestVoteAndReward_NoStakes for rationale).
+	mockClient.On("HeaderByNumber", mock.Anything, mock.Anything).Return(&types.Header{}, nil).Maybe()
 
 	// Mock stake event: one staker at block 40 (pre-epoch) with 1000 wei.
 	// The stake must land before epochStart (50) so the staker carries a
