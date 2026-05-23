@@ -64,20 +64,15 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	}
 	currentNum := currentBlockHeader.Number
 
-	// Prepare call options
-	callOpts := &bind.CallOpts{
-		Context: context.Background(),
-		Pending: false,
-		From:    cProps.MyPubKey,
-	}
-
-	// Get current start block and epoch interval from contract
-	startBlock, err := cProps.Kt.StartBlock(callOpts)
+	// Get current start block and epoch interval from contract (cached
+	// with a short TTL via state_cache.go to avoid re-querying every
+	// epoch).
+	startBlock, err := cachedStartBlock(cProps)
 	if err != nil {
 		log.Errorf("Failed to get start block: %v", err)
 		return fmt.Errorf("failed to get start block: %w", err)
 	}
-	interval, err := cProps.Kt.EpochInterval(callOpts)
+	interval, err := cachedEpochInterval(cProps)
 	if err != nil {
 		log.Errorf("Failed to get epoch interval: %v", err)
 		return fmt.Errorf("failed to get epoch interval: %w", err)
@@ -577,9 +572,8 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address, totalMi
 		return fmt.Errorf("failed to get contract balance: %v", err)
 	}
 
-	// Get total OC fees owed to subtract from reward amount
-	callOpts := &bind.CallOpts{Context: context.Background()}
-	tlOcFees, err := cProps.Kt.TlOcFees(callOpts)
+	// Get total OC fees owed to subtract from reward amount (TTL-cached).
+	tlOcFees, err := cachedTlOcFees(cProps)
 	if err != nil {
 		return fmt.Errorf("failed to get total OC fees: %v", err)
 	}
@@ -712,8 +706,9 @@ func getVoteCountAndRequired(cProps *ConnectionProps, epochStartBlock *big.Int, 
 		return 0, 0, fmt.Errorf("failed to get vote count: %w", err)
 	}
 
-	// Get required votes
-	voteRequired, err = cProps.Kt.ConsensusReq(callOpts)
+	// Get required votes (TTL-cached: ConsensusReq is contract config that
+	// changes via on-chain admin action and is otherwise stable).
+	voteRequired, err = cachedConsensusReq(cProps)
 	if err != nil {
 		log.Errorf("Failed to get required votes: %v", err)
 		return 0, 0, fmt.Errorf("failed to get required votes: %w", err)

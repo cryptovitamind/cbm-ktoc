@@ -71,12 +71,7 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 		return fmt.Errorf("failed to get current block: %w", err)
 	}
 
-	callOpts := &bind.CallOpts{
-		Context: context.Background(),
-		Pending: false,
-		From:    cProps.MyPubKey,
-	}
-	interval, err := cProps.Kt.EpochInterval(callOpts)
+	interval, err := cachedEpochInterval(cProps)
 	if err != nil {
 		return fmt.Errorf("failed to get epoch interval: %w", err)
 	}

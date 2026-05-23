@@ -137,6 +137,14 @@ type ConnectionProps struct {
 	// ConfirmationDepth — how many blocks past the epoch end to sample the
 	// lottery seed at (Phase 6b). Zero means "use DefaultConfirmationDepth".
 	ConfirmationDepth uint64
+
+	// Phase 6c — TTL caches for "current state" contract reads. See
+	// state_cache.go for the helpers that consult these. Concurrent-safe
+	// (sync.Mutex inside cachedValue). Do not read or write directly.
+	cachedStartBlock    cachedValue[*big.Int]
+	cachedEpochInterval cachedValue[uint16]
+	cachedConsensusReq  cachedValue[uint16]
+	cachedTlOcFees      cachedValue[*big.Int]
 }
 
 // Addresses holds Ethereum addresses and private keys from environment variables.
