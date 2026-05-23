@@ -640,28 +640,112 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address, totalMi
 	return nil
 }
 
+// WaitForBlocks blocks until the chain has advanced by cProps.BlocksToWait
+// blocks from the moment of the call. Tries SubscribeNewHead first (one
+// connection, headers streamed as they arrive) — saves ~24 BlockNumber
+// polls per call on a 12s/block chain. Falls back to the legacy polling
+// loop when subscriptions aren't supported (HTTP-only endpoints).
+//
+// Both paths are deadline-guarded: if the chain doesn't advance enough
+// within waitForBlocksDeadline(blocksToWait), the function returns an
+// error rather than hanging forever. Closes the long-standing
+// "infinite poll on chain stall" gap from earlier audits.
 func WaitForBlocks(cProps *ConnectionProps) error {
-	currentBlock, err := cProps.Client.BlockNumber(context.Background())
+	startBlock, err := cProps.Client.BlockNumber(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get current block number: %v", err)
 	}
+	if cProps.BlocksToWait == 0 {
+		return nil
+	}
+	targetBlock := startBlock + cProps.BlocksToWait
+	log.Printf("Waiting for %d blocks to pass (current=%d, target=%d)...", cProps.BlocksToWait, startBlock, targetBlock)
 
-	targetBlock := currentBlock + cProps.BlocksToWait
+	deadline := waitForBlocksDeadline(cProps.BlocksToWait)
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	defer cancel()
 
-	log.Printf("Waiting for %d blocks to pass...", cProps.BlocksToWait)
-	for currentBlock < targetBlock {
-		time.Sleep(TimeToWaitForBlocks)
-		currentBlock, err = cProps.Client.BlockNumber(context.Background())
-		if err != nil {
-			return fmt.Errorf("failed to get current block number: %v", err)
-		}
+	if err := waitForBlocksViaSubscription(ctx, cProps, targetBlock); err == nil {
+		log.Printf("")
+		return nil
+	} else if err == errSubscribeUnsupported {
+		// Fall through to polling.
+		log.Debugf("SubscribeNewHead unsupported; falling back to polling")
+	} else if err == context.DeadlineExceeded || ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("WaitForBlocks deadline exceeded waiting for block %d (chain may be stalled)", targetBlock)
+	} else {
+		// Subscription errored mid-stream; try polling for the remainder.
+		log.Warnf("Subscription error during WaitForBlocks; falling back to polling: %v", err)
+	}
 
-		status := fmt.Sprintf("Current block: %d, Target block: %d", currentBlock, targetBlock)
-		fmt.Fprintf(os.Stdout, "\r\033[1;36m%s\033[0m", status) // Cyan text, reset color
-		os.Stdout.Sync()                                        // Ensure it flushes immediately
+	if err := waitForBlocksViaPolling(ctx, cProps, targetBlock); err != nil {
+		return err
 	}
 	log.Printf("")
 	return nil
+}
+
+// waitForBlocksDeadline gives ~30 seconds per expected block — generous
+// for normal 12s/block chains, but bounded so a stalled chain doesn't
+// hang the node indefinitely.
+func waitForBlocksDeadline(blocksToWait uint64) time.Duration {
+	const perBlock = 30 * time.Second
+	return time.Duration(blocksToWait) * perBlock
+}
+
+// errSubscribeUnsupported signals that SubscribeNewHead isn't available
+// on this endpoint (e.g., HTTP-only RPC). Triggers polling fallback.
+var errSubscribeUnsupported = fmt.Errorf("subscribe-new-head not supported")
+
+func waitForBlocksViaSubscription(ctx context.Context, cProps *ConnectionProps, targetBlock uint64) error {
+	ch := make(chan *types.Header, 16)
+	sub, err := cProps.Client.SubscribeNewHead(ctx, ch)
+	if err != nil {
+		return errSubscribeUnsupported
+	}
+	defer sub.Unsubscribe()
+
+	for {
+		select {
+		case h := <-ch:
+			if h == nil {
+				continue
+			}
+			status := fmt.Sprintf("Current block: %d, Target block: %d", h.Number.Uint64(), targetBlock)
+			fmt.Fprintf(os.Stdout, "\r\033[1;36m%s\033[0m", status)
+			os.Stdout.Sync()
+			if h.Number.Uint64() >= targetBlock {
+				return nil
+			}
+		case subErr := <-sub.Err():
+			if subErr == nil {
+				continue
+			}
+			return fmt.Errorf("subscription error: %w", subErr)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func waitForBlocksViaPolling(ctx context.Context, cProps *ConnectionProps, targetBlock uint64) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("WaitForBlocks deadline exceeded waiting for block %d (chain may be stalled)", targetBlock)
+		case <-time.After(TimeToWaitForBlocks):
+		}
+		currentBlock, err := cProps.Client.BlockNumber(context.Background())
+		if err != nil {
+			return fmt.Errorf("failed to get current block number: %v", err)
+		}
+		status := fmt.Sprintf("Current block: %d, Target block: %d", currentBlock, targetBlock)
+		fmt.Fprintf(os.Stdout, "\r\033[1;36m%s\033[0m", status)
+		os.Stdout.Sync()
+		if currentBlock >= targetBlock {
+			return nil
+		}
+	}
 }
 
 func NewTransactor(cProps *ConnectionProps) (*bind.TransactOpts, error) {

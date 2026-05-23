@@ -14,10 +14,9 @@ import (
 )
 
 const (
-	DefaultGasLimit     uint64        = 24000
-	DefaultBlocksToWait uint64        = 10
-	TimeToWaitForBlocks time.Duration = 5 * time.Second
-	DefaultChunkSize    int           = 500
+	DefaultGasLimit     uint64 = 24000
+	DefaultBlocksToWait uint64 = 10
+	DefaultChunkSize    int    = 500
 
 	// DefaultConfirmationDepth is the number of blocks past the epoch end
 	// the node waits before sampling the lottery seed. Larger = stronger
@@ -25,6 +24,11 @@ const (
 	// on a 12s/block chain; effectively immune to single-block reorgs.
 	DefaultConfirmationDepth uint64 = 5
 )
+
+// TimeToWaitForBlocks is the polling interval used by the WaitForBlocks
+// fallback path. Declared as `var` (not `const`) so tests can override
+// it to keep their runtime short.
+var TimeToWaitForBlocks time.Duration = 5 * time.Second
 
 type EthClient interface {
 	CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error)
@@ -38,6 +42,10 @@ type EthClient interface {
 	TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error)
 	FilterLogs(ctx context.Context, query ethereum.FilterQuery) ([]types.Log, error)
 	SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error)
+	// SubscribeNewHead delivers new block headers as the chain advances.
+	// On HTTP-only endpoints this typically returns an error — callers
+	// should fall back to polling BlockNumber.
+	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
 }
 
 type StakedIterator interface {

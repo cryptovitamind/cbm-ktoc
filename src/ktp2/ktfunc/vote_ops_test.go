@@ -338,6 +338,18 @@ func (m *MockEthClient) SubscribeFilterLogs(ctx context.Context, query ethereum.
 	return nil, nil
 }
 
+// SubscribeNewHead mock. Returns whatever was scripted via Return(); if no
+// matching expectation is set the test will fail loudly (which is what we
+// want — explicit setup or it should be unreachable).
+func (m *MockEthClient) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	args := m.Called(ctx, ch)
+	var sub ethereum.Subscription
+	if v := args.Get(0); v != nil {
+		sub = v.(ethereum.Subscription)
+	}
+	return sub, args.Error(1)
+}
+
 // PastOcFees
 func (m *MockKtv2) PastOcFees(opts *bind.CallOpts, oc common.Address) (*big.Int, error) {
 	args := m.Called(opts, oc)

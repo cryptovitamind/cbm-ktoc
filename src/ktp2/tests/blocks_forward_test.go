@@ -111,6 +111,10 @@ func (m *MockEthClient) SubscribeFilterLogs(ctx context.Context, query ethereum.
 	return nil, nil
 }
 
+func (m *MockEthClient) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	return nil, nil
+}
+
 // TestParseStartEndBlocks is included for completeness, assuming it’s in another file but not here.
 func TestMoveBlocksForward(t *testing.T) {
 	privKey, _ := crypto.GenerateKey()
