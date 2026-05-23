@@ -660,3 +660,37 @@ func TestFeesCache_FreshDBInitializesSchemaWithoutWipe(t *testing.T) {
 		t.Fatalf("post-init view: %v", err)
 	}
 }
+
+// TestGetOwedEpochBlocks_DedupsTransactionByHashCalls — when multiple
+// events share the same tx hash (e.g., a single tx that emits both a
+// Voted and a Rwd event in the same block), the function should look
+// the tx up exactly once instead of once per event.
+func TestGetOwedEpochBlocks_DedupsTransactionByHashCalls(t *testing.T) {
+	chainID := big.NewInt(1337)
+	xTx, addrX := signedTxFromKey(t, testKeyX, chainID)
+	sharedTxHash := common.HexToHash("0x7777000000000000000000000000000000000000000000000000000000000000")
+
+	// Two Voted events + one Rwd event, all from the SAME tx hash.
+	votedEvents := []*ktv2.Ktv2Voted{
+		{Raw: types.Log{TxHash: sharedTxHash, BlockNumber: 18_000_300}},
+		{Raw: types.Log{TxHash: sharedTxHash, BlockNumber: 18_000_300}},
+	}
+	rwdEvents := []*ktv2.Ktv2Rwd{
+		{Raw: types.Log{TxHash: sharedTxHash, BlockNumber: 18_000_900}},
+	}
+
+	mockKt := &MockKtv2{}
+	mockClient := &MockEthClient{}
+	mockKt.On("FilterVoted", mock.Anything).Return(&mockVotedIter{events: votedEvents}, nil)
+	mockKt.On("FilterRwd", mock.Anything).Return(&mockRwdIter{events: rwdEvents}, nil)
+	mockClient.On("TransactionByHash", mock.Anything, sharedTxHash).Return(xTx, false, nil)
+	mockKt.On("StartBlock", mock.MatchedBy(func(opts *bind.CallOpts) bool {
+		return opts != nil && opts.BlockNumber != nil
+	})).Return(big.NewInt(18_000_500), nil)
+
+	cProps := &ConnectionProps{Kt: mockKt, Client: mockClient, ChunkSize: 10_000_000}
+
+	_, err := GetOwedEpochBlocks(cProps, addrX, 18_000_000, 18_001_000)
+	assert.NoError(t, err)
+	mockClient.AssertNumberOfCalls(t, "TransactionByHash", 1)
+}

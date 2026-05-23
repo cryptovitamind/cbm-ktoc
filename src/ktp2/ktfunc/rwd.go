@@ -31,6 +31,25 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 	if chunkSize == 0 {
 		return nil, fmt.Errorf("Chunk size cannot be zero. Set it using -chunkSize or CHUNK_SIZE env var")
 	}
+
+	// Phase 6d — per-invocation TransactionByHash cache. The same tx hash
+	// can drive multiple events (Voted then Rwd, or multiple Voted's in
+	// one tx), and looking it up is an RPC each time. We cache the
+	// (tx, isPending, err) tuple by hash for the duration of this call.
+	type txLookup struct {
+		tx        *types.Transaction
+		isPending bool
+		err       error
+	}
+	txCache := make(map[common.Hash]txLookup)
+	lookupTx := func(hash common.Hash) (*types.Transaction, bool, error) {
+		if cached, ok := txCache[hash]; ok {
+			return cached.tx, cached.isPending, cached.err
+		}
+		tx, isPending, err := cProps.Client.TransactionByHash(context.Background(), hash)
+		txCache[hash] = txLookup{tx: tx, isPending: isPending, err: err}
+		return tx, isPending, err
+	}
 	for currentStart := startBlock; currentStart <= endBlock; currentStart += chunkSize {
 		currentEnd := currentStart + chunkSize - 1
 		if currentEnd > endBlock {
@@ -60,7 +79,7 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 		for votedIter.Next() {
 			event := votedIter.Event()
 			// Get tx details to check sender
-			tx, isPending, err := cProps.Client.TransactionByHash(context.Background(), event.Raw.TxHash)
+			tx, isPending, err := lookupTx(event.Raw.TxHash)
 			if err != nil {
 				log.Warnf("Failed to get tx %s: %v", event.Raw.TxHash.Hex(), err)
 				continue
@@ -99,7 +118,7 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 		for rwdIter.Next() {
 			event := rwdIter.Event()
 			// Get tx details to check sender
-			tx, isPending, err := cProps.Client.TransactionByHash(context.Background(), event.Raw.TxHash)
+			tx, isPending, err := lookupTx(event.Raw.TxHash)
 			if err != nil {
 				log.Warnf("Failed to get tx %s: %v", event.Raw.TxHash.Hex(), err)
 				continue
