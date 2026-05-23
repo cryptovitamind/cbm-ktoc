@@ -441,3 +441,73 @@ func TestFindMinOverBlockRange_PartialWithdrawMidEpochReducesMin(t *testing.T) {
 			want.String(), v.StakeAmount.String())
 	}
 }
+
+// ============================================================================
+// Phase 5d — findMinOverBlockRange edge cases.
+
+// TestFindMinOverBlockRange_OverWithdrawTrigsCumulativeClamp — wallet
+// withdraws more than they ever staked. Per-block deltas (post-Phase-4
+// signed) drive cumulative below zero; the clamp at find_receiver.go:1194-1196
+// floors at zero. Pin: wallet ends up excluded (min=0).
+//
+// This path was unreachable before Phase 4 because per-block clamping
+// erased withdraws. Now that deltas are signed, the cumulative-floor
+// branch is genuinely exercisable — and previously had no test.
+func TestFindMinOverBlockRange_OverWithdrawTrigsCumulativeClamp(t *testing.T) {
+	w := common.HexToAddress("0x000000000000000000000000000000000000Bad4")
+	const epochStart, epochEnd = uint64(18_000_500), uint64(18_001_100)
+
+	// Wallet stakes 1 ETH pre-epoch, then withdraws 5 ETH mid-epoch
+	// (impossible on-chain but the Go code should handle defensively).
+	stakeEvents := []StakeEvent{
+		{Addr: w, Amount: eth(1), Block: 18_000_000},
+	}
+	withdrawEvents := []WithdrawEvent{
+		{Addr: w, Amount: eth(5), Block: 18_000_700},
+	}
+	stakeDataMap := buildStakeDataMap(stakeEvents, withdrawEvents)
+
+	_, addressMins, err := findMinOverBlockRange(epochStart, epochEnd, stakeDataMap)
+	if err != nil {
+		t.Fatalf("findMinOverBlockRange error: %v", err)
+	}
+
+	if v, ok := addressMins[w]; ok {
+		t.Errorf("over-withdraw should drive minStake to 0 (excluded), got min=%s",
+			v.StakeAmount.String())
+	}
+}
+
+// TestFindMinOverBlockRange_EventAtExactEpochEndCountsInRange — boundary
+// test. An event at block == epochEnd is treated as in-range. The
+// function's only range check is `if block < epochStartBlock { continue }`
+// (no upper bound), so any block >= epochStart counts. A wallet that
+// withdraws 0.5 ETH at exactly epochEnd should have its post-event stake
+// (0.5 ETH) reflected as a new minimum candidate.
+func TestFindMinOverBlockRange_EventAtExactEpochEndCountsInRange(t *testing.T) {
+	w := common.HexToAddress("0x000000000000000000000000000000000000Bad5")
+	const epochStart, epochEnd = uint64(18_000_500), uint64(18_001_100)
+
+	stakeEvents := []StakeEvent{
+		{Addr: w, Amount: eth(1), Block: 18_000_000}, // pre-epoch
+	}
+	withdrawEvents := []WithdrawEvent{
+		{Addr: w, Amount: tenthEth(5), Block: epochEnd}, // 0.5 ETH out at exactly epochEnd
+	}
+	stakeDataMap := buildStakeDataMap(stakeEvents, withdrawEvents)
+
+	_, addressMins, err := findMinOverBlockRange(epochStart, epochEnd, stakeDataMap)
+	if err != nil {
+		t.Fatalf("findMinOverBlockRange error: %v", err)
+	}
+
+	want := tenthEth(5) // 0.5 ETH = post-event stake at epochEnd
+	v, ok := addressMins[w]
+	if !ok {
+		t.Fatalf("wallet should be included; was excluded")
+	}
+	if v.StakeAmount.Cmp(want) != 0 {
+		t.Errorf("event at epochEnd should produce post-withdraw min %s; got %s",
+			want.String(), v.StakeAmount.String())
+	}
+}

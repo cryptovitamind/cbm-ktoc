@@ -189,3 +189,67 @@ func TestCalculateWinningWallet_InvalidStakeData(t *testing.T) {
 		t.Errorf("Expected winner %s, got %s", addr2.Hex(), winner.Hex())
 	}
 }
+
+// ============================================================================
+// Phase 5d — winner-selection edge cases.
+
+// TestCalculateWinningWallet_NilProbEntriesAreSkipped pins the defensive
+// nil-Prob skip at find_receiver.go:369-371. Three wallets, one has
+// Prob=nil; the loop logs a warning and skips it, picks from the other
+// two via cumulative probability.
+func TestCalculateWinningWallet_NilProbEntriesAreSkipped(t *testing.T) {
+	addr1 := common.HexToAddress("0x0000000000000000000000000000000000000001")
+	addrNil := common.HexToAddress("0x0000000000000000000000000000000000000002")
+	addr3 := common.HexToAddress("0x0000000000000000000000000000000000000003")
+
+	stakeDataMinsMap := map[common.Address]*UserStakeData{
+		addr1:   createUserStakeData2("100", 0.4),
+		addrNil: {StakeAmount: big.NewInt(100), Prob: nil}, // nil Prob — skipped
+		addr3:   createUserStakeData2("100", 0.6),
+	}
+
+	// Sorted: addr1 < addrNil < addr3. randFloat = 0 -> addr1 wins (cumProb 0.4).
+	winner, err := calcWinningWallet(stakeDataMinsMap, common.Hash{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if winner != addr1 {
+		t.Errorf("randFloat=0 should select addr1; got %s", winner.Hex())
+	}
+
+	// randFloat ~0.5: skip addr1 (cum 0.4), skip addrNil (nil Prob),
+	// cum after addr3 = 1.0, select addr3.
+	var bytes32 [32]byte
+	bytes32[0] = 0x80 // 2^255 / 2^256 = 0.5
+	winner2, err := calcWinningWallet(stakeDataMinsMap, common.Hash(bytes32))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if winner2 != addr3 {
+		t.Errorf("randFloat=0.5 should skip addrNil and select addr3; got %s", winner2.Hex())
+	}
+}
+
+// TestCalculateWinningWallet_AllNilProbsFallsThrough — every wallet has
+// nil Prob. The loop skips all of them, total cumulativeProb stays 0,
+// no winner is found in the range, falls through to the "last address"
+// fallback (find_receiver.go:391-396).
+func TestCalculateWinningWallet_AllNilProbsFallsThrough(t *testing.T) {
+	addr1 := common.HexToAddress("0x0000000000000000000000000000000000000001")
+	addr2 := common.HexToAddress("0x0000000000000000000000000000000000000002")
+
+	stakeDataMinsMap := map[common.Address]*UserStakeData{
+		addr1: {StakeAmount: big.NewInt(100), Prob: nil},
+		addr2: {StakeAmount: big.NewInt(100), Prob: nil},
+	}
+
+	winner, err := calcWinningWallet(stakeDataMinsMap, common.Hash{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Fallback picks the LAST sorted address.
+	if winner != addr2 {
+		t.Errorf("all-nil-Prob fallback should return last sorted address (%s); got %s",
+			addr2.Hex(), winner.Hex())
+	}
+}
