@@ -1088,11 +1088,26 @@ func buildStakeDataMap(stakeEvents []StakeEvent, withdrawEvents []WithdrawEvent)
 	return stakeDataMap
 }
 
-func queryChunkWithRetry(cProps *ConnectionProps, kt Ktv2Interface, start, end uint64, stakeOut *[]StakeEvent, withdrawOut *[]WithdrawEvent) error {
-	const maxRetries = 3
-	var query func(s, e uint64) error
+// isQueryTooLargeError detects the family of RPC errors that recommend
+// reducing the queried block range. Brittle: providers phrase it
+// differently, so we substring-match on a few common shapes. Anything that
+// doesn't match is treated as non-retriable and surfaces immediately.
+func isQueryTooLargeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "query") || strings.Contains(msg, "limit") || strings.Contains(msg, "large")
+}
 
-	query = func(s, e uint64) error {
+func queryChunkWithRetry(cProps *ConnectionProps, kt Ktv2Interface, start, end uint64, stakeOut *[]StakeEvent, withdrawOut *[]WithdrawEvent) error {
+	// maxSplitLevels caps how many times we recursively halve a range when
+	// the RPC returns "query too large". Three levels means a chunk can be
+	// quartered (or eighthed under chunks). Effective floor = chunkSize / 8.
+	const maxSplitLevels = 3
+	var singleQuery func(s, e uint64) error
+
+	singleQuery = func(s, e uint64) error {
 		if cProps.QueryDelay > 0 {
 			time.Sleep(cProps.QueryDelay)
 		}
@@ -1147,28 +1162,36 @@ func queryChunkWithRetry(cProps *ConnectionProps, kt Ktv2Interface, start, end u
 		return nil
 	}
 
-	// Initial attempt
-	err := query(start, end)
-	if err == nil {
-		return nil
+	// queryWithSplit tries a single RPC call for [s, e]. On a retriable
+	// "query too large" error it halves the range and recurses on each
+	// half — up to maxSplitLevels deep. Non-retriable errors and depth
+	// exhaustion propagate.
+	var queryWithSplit func(s, e uint64, depth int) error
+	queryWithSplit = func(s, e uint64, depth int) error {
+		err := singleQuery(s, e)
+		if err == nil {
+			return nil
+		}
+		if !isQueryTooLargeError(err) {
+			return err
+		}
+		if depth <= 0 {
+			return fmt.Errorf("query split exceeded max depth at range %d-%d: %w", s, e, err)
+		}
+		if s >= e {
+			// Already a single block; cannot split further.
+			return err
+		}
+		mid := (s + e) / 2
+		log.Warnf("Splitting chunk %d-%d into %d-%d and %d-%d due to error (depth left: %d): %v",
+			s, e, s, mid, mid+1, e, depth-1, err)
+		if err := queryWithSplit(s, mid, depth-1); err != nil {
+			return err
+		}
+		return queryWithSplit(mid+1, e, depth-1)
 	}
 
-	// Retry by splitting if error suggests query too large (brittle check, but common)
-	for retry := 1; retry <= maxRetries; retry++ {
-		if !strings.Contains(err.Error(), "query") && !strings.Contains(err.Error(), "limit") && !strings.Contains(err.Error(), "large") {
-			return err // Not a retriable error
-		}
-		mid := (start + end) / 2
-		log.Warnf("Retry %d: Splitting chunk %d-%d into %d-%d and %d-%d due to error: %v", retry, start, end, start, mid, mid+1, end, err)
-		if err = query(start, mid); err != nil {
-			return err
-		}
-		if err = query(mid+1, end); err != nil {
-			return err
-		}
-		return nil // Success after split
-	}
-	return err // Max retries exceeded
+	return queryWithSplit(start, end, maxSplitLevels)
 }
 
 func GetContractCreationBlock(cProps *ConnectionProps) (uint64, error) {
