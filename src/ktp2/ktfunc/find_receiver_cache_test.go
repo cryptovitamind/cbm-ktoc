@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"ktp2/src/abis/ktv2"
 	"math/big"
@@ -13,6 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"go.etcd.io/bbolt"
 )
 
@@ -347,7 +350,182 @@ func TestCache_WipesAndMigratesOnSchemaMismatch(t *testing.T) {
 	}
 }
 
-// TestCache_FreshDBInitializesSchemaWithoutWipe — a brand-new DB has no
+// ============================================================================
+// Phase 5b — queryChunkWithRetry tests + TDD for the dead-retry-loop bug.
+//
+// Audit finding: the retry loop body has unconditional `return` on every
+// branch, so the body runs exactly once. `maxRetries = 3` is dead code —
+// splitting only works one level deep. If a split-half STILL hits a
+// "query too large" error, the function gives up immediately. These tests
+// pin the intended behavior; test 2 fails on master, passes after the fix.
+
+// queryRetryScript drives mock FilterStaked/FilterWithdrew responses for
+// queryChunkWithRetry tests. Each call increments callCount and consults
+// scriptedErrs: if there's an entry matching (start, end), return that
+// error; otherwise return an empty iterator (success with no events).
+type queryRetryScript struct {
+	stakeCalls    []queryRange
+	withdrawCalls []queryRange
+	stakeErrs     map[queryRange]error
+	withdrawErrs  map[queryRange]error
+}
+
+type queryRange struct{ start, end uint64 }
+
+func newQueryRetryScript() *queryRetryScript {
+	return &queryRetryScript{
+		stakeErrs:    map[queryRange]error{},
+		withdrawErrs: map[queryRange]error{},
+	}
+}
+
+func (s *queryRetryScript) failStakeOn(start, end uint64, err error) {
+	s.stakeErrs[queryRange{start, end}] = err
+}
+
+func (s *queryRetryScript) installOn(mockKt *MockKtv2) {
+	mockKt.On("FilterStaked", mock.AnythingOfType("*bind.FilterOpts")).Return(
+		func(opts *bind.FilterOpts) StakedIterator {
+			r := queryRange{opts.Start, *opts.End}
+			s.stakeCalls = append(s.stakeCalls, r)
+			if _, ok := s.stakeErrs[r]; ok {
+				return nil
+			}
+			return &mockStakedIterator{}
+		},
+		func(opts *bind.FilterOpts) error {
+			r := queryRange{opts.Start, *opts.End}
+			if e, ok := s.stakeErrs[r]; ok {
+				return e
+			}
+			return nil
+		},
+	)
+	mockKt.On("FilterWithdrew", mock.AnythingOfType("*bind.FilterOpts")).Return(
+		func(opts *bind.FilterOpts) WithdrewIterator {
+			r := queryRange{opts.Start, *opts.End}
+			s.withdrawCalls = append(s.withdrawCalls, r)
+			if _, ok := s.withdrawErrs[r]; ok {
+				return nil
+			}
+			return &mockWithdrewIterator{}
+		},
+		func(opts *bind.FilterOpts) error {
+			r := queryRange{opts.Start, *opts.End}
+			if e, ok := s.withdrawErrs[r]; ok {
+				return e
+			}
+			return nil
+		},
+	)
+}
+
+// queryTooLarge is the error message shape providers use that the function
+// recognizes as retriable.
+func queryTooLarge(s, e uint64) error {
+	return fmt.Errorf("query too large for range %d-%d", s, e)
+}
+
+// TestQueryChunkWithRetry_SingleSplitSucceeds — full range fails with
+// "query too large", both halves succeed. Function should merge results
+// and return nil error. Passes today; pins existing behavior.
+func TestQueryChunkWithRetry_SingleSplitSucceeds(t *testing.T) {
+	script := newQueryRetryScript()
+	script.failStakeOn(100, 999, queryTooLarge(100, 999)) // full range fails
+	// halves succeed (no entry in stakeErrs)
+
+	mockKt := &MockKtv2{}
+	script.installOn(mockKt)
+
+	cProps := &ConnectionProps{ChunkSize: 1000}
+	var stakes []StakeEvent
+	var withdraws []WithdrawEvent
+	err := queryChunkWithRetry(cProps, mockKt, 100, 999, &stakes, &withdraws)
+
+	assert.NoError(t, err)
+	// We expect: 1 failed full-range attempt + 2 successful half attempts = 3
+	// FilterStaked calls. (FilterWithdrew is only called after FilterStaked
+	// succeeds within the same query(), so the failed full-range attempt
+	// produced 0 withdraw calls; each successful half produces 1 = 2 total.)
+	assert.Equal(t, 3, len(script.stakeCalls), "FilterStaked calls: %v", script.stakeCalls)
+	assert.Equal(t, 2, len(script.withdrawCalls), "FilterWithdrew calls: %v", script.withdrawCalls)
+}
+
+// TestQueryChunkWithRetry_RecursiveSplitWhenHalfStillTooLarge — full range
+// fails AND first half fails AND second half fails on the first level, but
+// EACH of the four quarters succeeds. Correct behavior: recurse, split each
+// failing half further, succeed at the quarter level. **Fails on master**
+// because the function gives up after the first split level.
+func TestQueryChunkWithRetry_RecursiveSplitWhenHalfStillTooLarge(t *testing.T) {
+	script := newQueryRetryScript()
+	// First level: full range fails.
+	script.failStakeOn(100, 999, queryTooLarge(100, 999))
+	// Second level: both halves fail.
+	script.failStakeOn(100, 549, queryTooLarge(100, 549))
+	script.failStakeOn(550, 999, queryTooLarge(550, 999))
+	// Third level (quarters): all succeed (no entries).
+
+	mockKt := &MockKtv2{}
+	script.installOn(mockKt)
+
+	cProps := &ConnectionProps{ChunkSize: 1000}
+	var stakes []StakeEvent
+	var withdraws []WithdrawEvent
+	err := queryChunkWithRetry(cProps, mockKt, 100, 999, &stakes, &withdraws)
+
+	assert.NoError(t, err, "function should recurse and succeed at quarter granularity")
+}
+
+// TestQueryChunkWithRetry_NonRetriableErrorReturnsImmediately — error message
+// doesn't match "query|limit|large". Function returns immediately, no split
+// attempts. Pins existing behavior.
+func TestQueryChunkWithRetry_NonRetriableErrorReturnsImmediately(t *testing.T) {
+	script := newQueryRetryScript()
+	script.failStakeOn(100, 999, errors.New("rpc: connection refused"))
+
+	mockKt := &MockKtv2{}
+	script.installOn(mockKt)
+
+	cProps := &ConnectionProps{ChunkSize: 1000}
+	var stakes []StakeEvent
+	var withdraws []WithdrawEvent
+	err := queryChunkWithRetry(cProps, mockKt, 100, 999, &stakes, &withdraws)
+
+	assert.Error(t, err)
+	assert.Equal(t, 1, len(script.stakeCalls), "should NOT split on a non-retriable error; got calls %v", script.stakeCalls)
+}
+
+// TestQueryChunkWithRetry_GiveUpAtMaxDepthReturnsError — every level fails
+// with "query too large". Eventually function gives up and returns an error
+// rather than infinite-recursing. Pin the bound after the fix.
+func TestQueryChunkWithRetry_GiveUpAtMaxDepthReturnsError(t *testing.T) {
+	script := newQueryRetryScript()
+	// Fail everything. The mock returns the same retriable error for every
+	// range, so no matter how deep we split, we keep failing.
+	mockKt := &MockKtv2{}
+	mockKt.On("FilterStaked", mock.AnythingOfType("*bind.FilterOpts")).Return(
+		func(opts *bind.FilterOpts) StakedIterator {
+			script.stakeCalls = append(script.stakeCalls, queryRange{opts.Start, *opts.End})
+			return nil
+		},
+		func(opts *bind.FilterOpts) error {
+			return queryTooLarge(opts.Start, *opts.End)
+		},
+	)
+	mockKt.On("FilterWithdrew", mock.AnythingOfType("*bind.FilterOpts")).Return(
+		(WithdrewIterator)(nil),
+		nil,
+	).Maybe() // shouldn't be called since FilterStaked always fails first
+
+	cProps := &ConnectionProps{ChunkSize: 1000}
+	var stakes []StakeEvent
+	var withdraws []WithdrawEvent
+	err := queryChunkWithRetry(cProps, mockKt, 100, 999, &stakes, &withdraws)
+
+	assert.Error(t, err, "should give up rather than recurse infinitely")
+	// Don't pin the exact call count — both pre- and post-fix should bound
+	// it; the test only requires that the function terminates with an error.
+}
 // schema_version. The first call should create the buckets and set the
 // marker, but there's nothing to wipe. This is the normal first-run path.
 func TestCache_FreshDBInitializesSchemaWithoutWipe(t *testing.T) {

@@ -81,16 +81,36 @@ func (m *MockKtv2) ConsensusReq(opts *bind.CallOpts) (uint16, error) {
 	return args.Get(0).(uint16), args.Error(1)
 }
 
-// FilterStaked mock
+// FilterStaked mock. Accepts either concrete (StakedIterator, error) returns or
+// dynamic (func(*bind.FilterOpts) StakedIterator, func(*bind.FilterOpts) error)
+// returns — the latter lets tests vary behavior by the requested block range.
 func (m *MockKtv2) FilterStaked(opts *bind.FilterOpts) (StakedIterator, error) {
 	args := m.Called(opts)
-	return args.Get(0).(StakedIterator), args.Error(1)
+	var iter StakedIterator
+	if fn, ok := args.Get(0).(func(*bind.FilterOpts) StakedIterator); ok {
+		iter = fn(opts)
+	} else if args.Get(0) != nil {
+		iter = args.Get(0).(StakedIterator)
+	}
+	if errFn, ok := args.Get(1).(func(*bind.FilterOpts) error); ok {
+		return iter, errFn(opts)
+	}
+	return iter, args.Error(1)
 }
 
-// FilterWithdrew mock
+// FilterWithdrew mock. Same dynamic-return support as FilterStaked.
 func (m *MockKtv2) FilterWithdrew(opts *bind.FilterOpts) (WithdrewIterator, error) {
 	args := m.Called(opts)
-	return args.Get(0).(WithdrewIterator), args.Error(1)
+	var iter WithdrewIterator
+	if fn, ok := args.Get(0).(func(*bind.FilterOpts) WithdrewIterator); ok {
+		iter = fn(opts)
+	} else if args.Get(0) != nil {
+		iter = args.Get(0).(WithdrewIterator)
+	}
+	if errFn, ok := args.Get(1).(func(*bind.FilterOpts) error); ok {
+		return iter, errFn(opts)
+	}
+	return iter, args.Error(1)
 }
 
 // Give mock
