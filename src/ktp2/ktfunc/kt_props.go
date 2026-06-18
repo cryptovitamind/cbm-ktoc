@@ -448,7 +448,14 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 
 	// Convert Wei to ETH
 	PrintKtBalance(cProps)
-	log.Println("Note: Mappings (blockRwd, ocRwdrVote, ocRwdrs, ocFees) will not be printed as they require specific keys.")
+
+	// Reconstruct the current epoch's votes from events so the operator can see
+	// how the reward vote stands (the raw blockRwd / ocRwdrVote mappings can't
+	// be enumerated directly).
+	if err := PrintEpochVoteStatus(cProps); err != nil {
+		log.Warnf("Could not print epoch vote status: %v", err)
+	}
+	log.Println("Note: other mappings (ocRwdrs, ocFees) are not printed as they require specific keys.")
 	log.Println()
 }
 
