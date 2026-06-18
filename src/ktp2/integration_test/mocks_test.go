@@ -73,7 +73,14 @@ func (f *FakeEthClient) CodeAt(ctx context.Context, account common.Address, bloc
 }
 
 func (f *FakeEthClient) BlockNumber(ctx context.Context) (uint64, error) {
-	return f.BlockNumberFn(ctx)
+	if f.BlockNumberFn != nil {
+		return f.BlockNumberFn(ctx)
+	}
+	// Default: pretend the chain head is far ahead of any block a test gathers,
+	// so cached tips count as "buried" and the reorg-detection hash gets
+	// recorded. Tests that need the head near a tip (to exercise the near-head
+	// skip) set BlockNumberFn explicitly.
+	return 10_000_000, nil
 }
 
 // FilterLogs is wired so `realGatherStakesAndWithdraws`'s debug-path

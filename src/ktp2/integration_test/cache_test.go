@@ -1,22 +1,17 @@
 package integration_test
 
-// Phase 1 (TDD) — reproduces the cache / RPC-overuse issues reported
-// against the node:
+// Cache-correctness tests. These reproduce the original RPC-overuse report
+// (the node re-scanned all blockchain history every vote cycle and rebuilt the
+// entire stake/withdraw set even though old data never changes) and pin the
+// fixes:
 //
-//   "[the node] keeps redoing the same work over and over. Every time
-//    it checks for voting, it scans all the blockchain history from
-//    the contract's start up to the current point and rebuilds the
-//    entire stake and withdraw data, even though that old data never
-//    changes."
+//   - The tip-pointer cache must not re-query blocks already cached by an
+//     earlier call when the requested end-block shifts.
+//   - A reorg at the cached tip must wipe and rebuild; a near-head tip must not
+//     be hash-checked (so transient RPC inconsistencies don't trigger a storm).
 //
-// We drive ktfunc.GatherStakesAndWithdraws (the public function
-// variable) and observe the block ranges queried from a fake Ktv2.
-// On master:
-//   - The second call re-queries blocks that were already cached in
-//     the first call (because the trailing chunk's end-block clamps
-//     to endU, so the key changes when endU shifts).
-//
-// After Phase 3 (tip-pointer cache) this test will pass.
+// They drive ktfunc.GatherStakesAndWithdraws and observe the block ranges
+// queried from a fake Ktv2.
 
 import (
 	"context"
@@ -113,11 +108,10 @@ func TestGatherStakesAndWithdraws_DoesNotRefetchPreviouslyCachedBlocks(t *testin
 	}
 }
 
-// TestGatherStakesAndWithdraws_DetectsReorgAndRebuildsCache — pins
-// Phase 6g. The cache stores tipHash alongside the tip pointer. If
-// the chain's hash at tip changes between calls (i.e. a reorg
-// dropped or rewrote events past the cached point), the second call
-// must wipe the chunks bucket and re-fetch.
+// TestGatherStakesAndWithdraws_DetectsReorgAndRebuildsCache — the cache stores
+// tipHash alongside the tip pointer. If the chain's hash at the (buried) tip
+// changes between calls (i.e. a reorg dropped or rewrote events past the cached
+// point), the second call must wipe the chunks bucket and re-fetch.
 func TestGatherStakesAndWithdraws_DetectsReorgAndRebuildsCache(t *testing.T) {
 	tmp := t.TempDir()
 	oldwd, _ := os.Getwd()
@@ -218,5 +212,67 @@ func TestGatherStakesAndWithdraws_NoReorgKeepsCache(t *testing.T) {
 	}
 	if stakedQueries != 0 {
 		t.Errorf("expected cache to serve the repeat call; got %d new FilterStaked queries", stakedQueries)
+	}
+}
+
+// TestGatherStakesAndWithdraws_NearHeadTipNotHashChecked — when the cached tip
+// is within reorgSafetyDepth of the chain head, its block hash must NOT be
+// recorded. So even if that block's hash later changes (the kind of momentary
+// inconsistency a load-balanced RPC returns near head), the next call must NOT
+// false-trigger a reorg wipe — it serves from cache. This is what keeps a node
+// from re-fetching every chunk (the "too many requests" storm) at vote time,
+// when the tip sits only a few blocks behind head.
+func TestGatherStakesAndWithdraws_NearHeadTipNotHashChecked(t *testing.T) {
+	tmp := t.TempDir()
+	oldwd, _ := os.Getwd()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	contractAddr := common.HexToAddress("0x000000000000000000000000000000000000BEEF")
+	cProps := &ktfunc.ConnectionProps{
+		KtAddr:    contractAddr,
+		ChunkSize: 500,
+	}
+
+	// Head is only 6 blocks past the tip (599) — well inside reorgSafetyDepth
+	// (32), so the tip counts as near-head and its hash is never recorded.
+	hashBefore := common.HexToHash("0xaaaa000000000000000000000000000000000000000000000000000000000000")
+	fakeClient := &FakeEthClient{
+		BlockNumberFn: func(_ context.Context) (uint64, error) { return 605, nil },
+		HeaderByNumberFn: func(_ context.Context, n *big.Int) (*types.Header, error) {
+			return &types.Header{Number: new(big.Int).Set(n), ParentHash: hashBefore}, nil
+		},
+	}
+	cProps.Client = fakeClient
+
+	var stakedQueries int
+	fakeKt := &FakeKtv2{}
+	fakeKt.FilterStakedFn = func(opts *bind.FilterOpts) (ktfunc.StakedIterator, error) {
+		stakedQueries++
+		return &stakedIter{}, nil
+	}
+	fakeKt.FilterWithdrewFn = func(opts *bind.FilterOpts) (ktfunc.WithdrewIterator, error) {
+		return &withdrewIter{}, nil
+	}
+
+	if _, err := ktfunc.GatherStakesAndWithdraws(cProps, fakeKt, big.NewInt(100), big.NewInt(599)); err != nil {
+		t.Fatalf("first gather: %v", err)
+	}
+
+	// Flip the near-head block's hash, exactly the transient a load-balanced
+	// RPC might return. Because no hash was recorded, this must not wipe.
+	hashAfter := common.HexToHash("0xbbbb000000000000000000000000000000000000000000000000000000000000")
+	fakeClient.HeaderByNumberFn = func(_ context.Context, n *big.Int) (*types.Header, error) {
+		return &types.Header{Number: new(big.Int).Set(n), ParentHash: hashAfter}, nil
+	}
+	stakedQueries = 0
+
+	if _, err := ktfunc.GatherStakesAndWithdraws(cProps, fakeKt, big.NewInt(100), big.NewInt(599)); err != nil {
+		t.Fatalf("second gather: %v", err)
+	}
+	if stakedQueries != 0 {
+		t.Errorf("near-head tip must not be hash-checked; expected cache hit, got %d new FilterStaked queries", stakedQueries)
 	}
 }

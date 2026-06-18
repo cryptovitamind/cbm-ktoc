@@ -64,15 +64,17 @@ func VoteAndReward(cProps *ConnectionProps) error {
 	}
 	currentNum := currentBlockHeader.Number
 
-	// Get current start block and epoch interval from contract (cached
-	// with a short TTL via state_cache.go to avoid re-querying every
-	// epoch).
-	startBlock, err := cachedStartBlock(cProps)
+	// Get current start block and epoch interval from the contract. Read
+	// fresh every cycle (NOT cached): startBlock advances on-chain the
+	// instant any node rewards an epoch, and a stale value makes the node
+	// act on an already-rewarded epoch, so its vote/reward tx reverts.
+	stateOpts := &bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey}
+	startBlock, err := cProps.Kt.StartBlock(stateOpts)
 	if err != nil {
 		log.Errorf("Failed to get start block: %v", err)
 		return fmt.Errorf("failed to get start block: %w", err)
 	}
-	interval, err := cachedEpochInterval(cProps)
+	interval, err := cProps.Kt.EpochInterval(stateOpts)
 	if err != nil {
 		log.Errorf("Failed to get epoch interval: %v", err)
 		return fmt.Errorf("failed to get epoch interval: %w", err)
@@ -182,43 +184,58 @@ func calculateVoteAndReward(
 		return common.Address{}, fmt.Errorf("epoch start or end block is nil")
 	}
 
-	// Seed the lottery from a block N positions past the epoch end. A
-	// single-block lookahead (endBlock+1) is vulnerable to short reorgs:
-	// two nodes voting milliseconds apart could see different hashes for
-	// the same block number if one observed a re-org tip. Voting at
-	// endBlock+ConfirmationDepth trades ~12s/depth of latency for much
-	// stronger cross-node agreement on the seed.
+	// The lottery seed is sampled from a FIXED block past the epoch end:
+	// seedBlock = endBlock + SeedOffset. SeedOffset is a constant identical
+	// across every operator, so two nodes always seed from the same block and
+	// agree on the winner. The seed location must never depend on per-operator
+	// config.
+	//
+	// confirmationDepth is a separate, operator-tunable knob that ONLY delays
+	// submission: the node waits until the seed block is buried under that many
+	// further blocks before reading its hash, so a late reorg can't change the
+	// seed out from under a vote already in flight. A larger depth means more
+	// reorg safety and more latency, but never a different winner.
 	confirmationDepth := cProps.ConfirmationDepth
 	if confirmationDepth == 0 {
 		confirmationDepth = DefaultConfirmationDepth
 	}
-	nextBlockNumber := new(big.Int).Add(endEpochBlockNumber, new(big.Int).SetUint64(confirmationDepth))
-	log.Printf("Epoch start block: %d, Seed block (endBlock+%d): %d",
-		epochStartBlock.Uint64(), confirmationDepth, nextBlockNumber.Uint64())
+	seedBlockNumber := new(big.Int).Add(endEpochBlockNumber, new(big.Int).SetUint64(SeedOffset))
+	requiredBlockNumber := new(big.Int).Add(seedBlockNumber, new(big.Int).SetUint64(confirmationDepth))
+	log.Printf("Epoch start block: %d, seed block (endBlock+%d): %d, voting once block %d is reached",
+		epochStartBlock.Uint64(), SeedOffset, seedBlockNumber.Uint64(), requiredBlockNumber.Uint64())
 
-	// Wait for the next block to be available
-	var nextBlock *types.Header
+	// Wait until the chain has reached requiredBlockNumber, i.e. the seed block
+	// is buried under confirmationDepth confirmations.
 	var err error
 	for {
-		nextBlock, err = cProps.Client.HeaderByNumber(context.Background(), nextBlockNumber)
-		if err == nil && nextBlock != nil {
+		var hdr *types.Header
+		hdr, err = cProps.Client.HeaderByNumber(context.Background(), requiredBlockNumber)
+		if err == nil && hdr != nil {
 			break
 		}
 		if err != nil && !strings.Contains(err.Error(), "not found") {
-			log.Errorf("Failed to get next block %d: %v", nextBlockNumber.Uint64(), err)
-			return common.Address{}, fmt.Errorf("failed to get next block: %w", err)
+			log.Errorf("Failed to get confirmation block %d: %v", requiredBlockNumber.Uint64(), err)
+			return common.Address{}, fmt.Errorf("failed to get confirmation block: %w", err)
 		}
-		log.Infof("Next block %d not available yet, waiting...", nextBlockNumber.Uint64())
+		log.Infof("Block %d not available yet, waiting...", requiredBlockNumber.Uint64())
 		time.Sleep(1 * time.Second) // Adjust sleep duration as needed, e.g., based on chain block time
 	}
-	log.Infof("Next block: %d", nextBlock.Number)
+
+	// Read the (now settled) seed block's hash. This is the lottery seed.
+	seedBlock, err := cProps.Client.HeaderByNumber(context.Background(), seedBlockNumber)
+	if err != nil || seedBlock == nil {
+		log.Errorf("Failed to get seed block %d: %v", seedBlockNumber.Uint64(), err)
+		return common.Address{}, fmt.Errorf("failed to get seed block: %w", err)
+	}
+	seedHash := seedBlock.Hash()
+	log.Infof("Seed block: %d", seedBlock.Number)
 
 	// Calculate winning wallet
 	if totalMin.Cmp(big.NewInt(0)) == 0 {
 		log.Debug("Total minimum stake is zero - Will select dead address as winner.")
 	}
 
-	winner, err := calcWinningWallet(stakeDataMinsMap, nextBlock.Hash())
+	winner, err := calcWinningWallet(stakeDataMinsMap, seedHash)
 	if err != nil {
 		log.Errorf("Failed to calculate winning wallet: %v", err)
 		return common.Address{}, fmt.Errorf("failed to calculate winning wallet: %w", err)
@@ -234,7 +251,7 @@ func calculateVoteAndReward(
 	}
 
 	// Vote for the winner
-	if err := vote(cProps, winner, nextBlock.Hash().String()); err != nil {
+	if err := vote(cProps, winner, seedHash.String()); err != nil {
 		log.Warnf("Failed to vote for %s: %v", winner.Hex(), err)
 		// Continue despite voting failure
 	}
@@ -477,12 +494,11 @@ func logNormalizeProbabilities(stakeDataMinsMap map[common.Address]*UserStakeDat
 }
 
 // calculateProbsForEachWallet assigns a log-normalized probability to each
-// wallet in stakeDataMinsMap. The linear-mode option (and the `-linearProbs`
-// CLI flag that drove it) was removed in Phase 6a — it was a per-operator
-// switch with no on-chain record, so different operators silently computed
-// different winners. Log normalization is now the only supported mode:
-// larger stakers still win more often, but with strongly diminishing
-// returns so whales don't drown out smaller wallets.
+// wallet in stakeDataMinsMap. Log normalization is the only supported mode:
+// a linear-vs-log switch would be a per-operator choice with no on-chain
+// record, so different operators could silently compute different winners.
+// With log weighting, larger stakers still win more often, but with strongly
+// diminishing returns so whales don't drown out smaller wallets.
 func calculateProbsForEachWallet(stakeDataMinsMap map[common.Address]*UserStakeData, totalMin *big.Int) bool {
 	_ = totalMin // kept in signature for call-site symmetry; log path doesn't use it.
 
@@ -572,8 +588,11 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address, totalMi
 		return fmt.Errorf("failed to get contract balance: %v", err)
 	}
 
-	// Get total OC fees owed to subtract from reward amount (TTL-cached).
-	tlOcFees, err := cachedTlOcFees(cProps)
+	// Get total OC fees owed to subtract from reward amount. Read fresh
+	// (NOT cached): tlOcFees changes on-chain as OCs accrue/withdraw fees,
+	// and a stale value miscomputes rewardAmount, causing the contract's
+	// balance invariant to revert the reward tx.
+	tlOcFees, err := cProps.Kt.TlOcFees(&bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey})
 	if err != nil {
 		return fmt.Errorf("failed to get total OC fees: %v", err)
 	}
@@ -790,9 +809,10 @@ func getVoteCountAndRequired(cProps *ConnectionProps, epochStartBlock *big.Int, 
 		return 0, 0, fmt.Errorf("failed to get vote count: %w", err)
 	}
 
-	// Get required votes (TTL-cached: ConsensusReq is contract config that
-	// changes via on-chain admin action and is otherwise stable).
-	voteRequired, err = cachedConsensusReq(cProps)
+	// Get required votes. Read fresh (NOT cached): a stale consensusReq can
+	// make the node reward before consensus is actually met, which the
+	// contract's `blockRwd >= consensusReq` check then reverts.
+	voteRequired, err = cProps.Kt.ConsensusReq(callOpts)
 	if err != nil {
 		log.Errorf("Failed to get required votes: %v", err)
 		return 0, 0, fmt.Errorf("failed to get required votes: %w", err)
@@ -909,7 +929,7 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 	startU := startBlock.Uint64()
 	endU := endBlock.Uint64()
 
-	// Read tip + tipHash. tipHash drives the Phase 6g reorg check below.
+	// Read tip + tipHash. tipHash drives the reorg check below.
 	var tip uint64
 	var tipHash common.Hash
 	var hasTipHash bool
@@ -927,10 +947,10 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 	})
 	log.Debugf("Cache tip on entry: %d (tipHash present: %v)", tip, hasTipHash)
 
-	// Reorg detector (Phase 6g). If we have a tip and a recorded tipHash,
-	// confirm the canonical chain still has that hash at that block. A
-	// mismatch indicates a reorg dropped or rewrote the cached events;
-	// wipe the chunks bucket and start over.
+	// Reorg detector. If we have a tip and a recorded tipHash, confirm the
+	// canonical chain still has that hash at that block. A mismatch indicates
+	// a reorg dropped or rewrote the cached events; wipe the chunks bucket
+	// and start over.
 	if tip > 0 && hasTipHash {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		current, hdrErr := cProps.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(tip))
@@ -998,20 +1018,32 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 		if newTip <= tip {
 			return nil
 		}
-		// Capture the hash of the new tip block so a future call can detect
-		// a reorg. If HeaderByNumber fails or the block isn't yet visible,
-		// log and continue — we'd rather have a slightly-less-protected
-		// cache than fail the whole vote cycle.
+		// Record the new tip's block hash so a future call can detect a reorg —
+		// but ONLY once the block is buried under reorgSafetyDepth confirmations.
+		// Recording the hash of a near-head block invites false-positive reorg
+		// wipes: recent blocks still reorg under PoS and can read inconsistently
+		// across load-balanced RPC backends, which would wipe the whole cache and
+		// re-fetch every chunk. When the tip is too near head we store its number
+		// but no hash, and clear any previously stored hash so the tip pointer and
+		// tip_hash can never refer to different blocks.
 		var newTipHash common.Hash
 		hashCaptured := false
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		hdr, hErr := cProps.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(newTip))
-		cancel()
-		if hErr == nil && hdr != nil {
-			newTipHash = hdr.Hash()
-			hashCaptured = true
-		} else if hErr != nil {
-			log.Debugf("Could not capture tipHash for block %d: %v", newTip, hErr)
+		head, headErr := cProps.Client.BlockNumber(context.Background())
+		switch {
+		case headErr != nil:
+			log.Debugf("Could not read head to gauge tip burial for block %d: %v", newTip, headErr)
+		case head >= reorgSafetyDepth && newTip <= head-reorgSafetyDepth:
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			hdr, hErr := cProps.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(newTip))
+			cancel()
+			if hErr == nil && hdr != nil {
+				newTipHash = hdr.Hash()
+				hashCaptured = true
+			} else if hErr != nil {
+				log.Debugf("Could not capture tipHash for block %d: %v", newTip, hErr)
+			}
+		default:
+			log.Debugf("Tip %d within %d blocks of head %d; not recording tip hash yet", newTip, reorgSafetyDepth, head)
 		}
 
 		err := db.Update(func(tx *bbolt.Tx) error {
@@ -1024,7 +1056,9 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 			if hashCaptured {
 				return b.Put([]byte("tip_hash"), newTipHash[:])
 			}
-			return nil
+			// Drop any stale hash that referred to an earlier tip so the
+			// pointer and hash stay consistent.
+			return b.Delete([]byte("tip_hash"))
 		})
 		if err == nil {
 			tip = newTip
@@ -1125,15 +1159,15 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 // changes in a way that requires existing entries to be invalidated.
 //
 // Versions:
-//   - 1 (implicit; pre-Phase-3): chunks bucket only, keys = 16-byte BE
+//   - 1 (implicit, legacy): chunks bucket only, keys = 16-byte BE
 //     (chunkStart, chunkEnd). No meta bucket. Trailing-chunk keys shifted
-//     every epoch — orphaned by the Phase 3 cache rewrite.
-//   - 2 (Phase 3): chunks bucket with 8-byte BE chunkStart keys; meta
-//     bucket with "tip" pointer and "schema_version" marker.
-//   - 3 (Phase 6g, current): adds "tip_hash" alongside "tip" in the meta
-//     bucket so the node can detect a reorg at startup by comparing the
-//     cached tipHash against the current chain. If hashes mismatch, the
-//     cache is wiped and rebuilt.
+//     every epoch — orphaned by the tip-pointer cache rewrite.
+//   - 2: chunks bucket with 8-byte BE chunkStart keys; meta bucket with
+//     "tip" pointer and "schema_version" marker.
+//   - 3 (current): adds "tip_hash" alongside "tip" in the meta bucket so the
+//     node can detect a reorg at startup by comparing the cached tipHash
+//     against the current chain. If hashes mismatch, the cache is wiped and
+//     rebuilt.
 const cacheSchemaVersion uint32 = 3
 
 // migrateOrInitCacheSchema reads the schema_version marker from the meta

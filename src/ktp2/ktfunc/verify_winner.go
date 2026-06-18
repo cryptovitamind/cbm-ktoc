@@ -20,9 +20,9 @@ type VerificationResult struct {
 // provided stake data, epoch range, and block hash. Returns the calculated
 // winner so it can be compared against the on-chain result.
 //
-// The previous `useLinear bool` parameter was removed in Phase 6a — the
-// node now always log-normalizes, eliminating the silent operator-config
-// divergence that caused multiple voters to disagree in the field.
+// The winner is always computed with log-normalized stake weights. There is
+// deliberately no probability-mode switch: a per-operator toggle would let
+// two nodes compute different winners from the same inputs and break consensus.
 func VerifyWinnerCalculation(
 	stakeDataMap map[common.Address]map[uint64]*UserStakeData,
 	epochStart, epochEnd uint64,
@@ -71,7 +71,7 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 		return fmt.Errorf("failed to get current block: %w", err)
 	}
 
-	interval, err := cachedEpochInterval(cProps)
+	interval, err := cProps.Kt.EpochInterval(&bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey})
 	if err != nil {
 		return fmt.Errorf("failed to get epoch interval: %w", err)
 	}

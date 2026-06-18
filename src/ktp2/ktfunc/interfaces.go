@@ -18,17 +18,44 @@ const (
 	DefaultBlocksToWait uint64 = 10
 	DefaultChunkSize    int    = 500
 
-	// DefaultConfirmationDepth is the number of blocks past the epoch end
-	// the node waits before sampling the lottery seed. Larger = stronger
-	// reorg immunity, but more latency before voting can begin. 5 ≈ 1 min
-	// on a 12s/block chain; effectively immune to single-block reorgs.
+	// SeedOffset is the fixed number of blocks past the epoch end at which
+	// the lottery seed is sampled: seedBlock = endBlock + SeedOffset, and
+	// the winner is selected from that block's hash. 32 (~6 min on mainnet)
+	// keeps the seed block deep enough that it has effectively settled before
+	// any operator reads it, so every node sees the same hash.
+	//
+	// CONSENSUS-CRITICAL: this MUST be identical across every operator. It
+	// is a compile-time constant, NOT a flag or env var, precisely so two
+	// nodes can never seed the lottery from different blocks and disagree on
+	// the winner. The seed location must never be made operator-configurable.
+	SeedOffset uint64 = 32
+
+	// DefaultConfirmationDepth is how many blocks past the seed block the
+	// node waits before SUBMITTING its vote, so the seed block is buried
+	// under enough confirmations to have settled. It controls submission
+	// timing / reorg burial ONLY — it does NOT change which block seeds the
+	// lottery (that is always endBlock + SeedOffset). Safe to differ between
+	// operators. 5 ≈ 1 min on a 12s/block chain.
 	DefaultConfirmationDepth uint64 = 5
+
+	// reorgSafetyDepth is how far behind the chain head a cached tip must be
+	// before we record its block hash for reorg detection. Tips within this
+	// many blocks of head are still subject to ordinary PoS reorgs and can
+	// read inconsistently across load-balanced RPC backends, so recording
+	// their hash would produce false-positive reorg wipes. 32 sits well past
+	// typical reorg depth while staying below 2-epoch finality (~64).
+	reorgSafetyDepth uint64 = 32
 )
 
 // TimeToWaitForBlocks is the polling interval used by the WaitForBlocks
 // fallback path. Declared as `var` (not `const`) so tests can override
 // it to keep their runtime short.
 var TimeToWaitForBlocks time.Duration = 5 * time.Second
+
+// DefaultWaitDuration is the pause between vote-cycle iterations of the
+// continuous (`-run`) loop. Distinct from TimeToWaitForBlocks (the inner
+// block-polling interval). One minute keeps idle RPC volume low.
+var DefaultWaitDuration time.Duration = 60 * time.Second
 
 type EthClient interface {
 	CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error)
@@ -81,6 +108,7 @@ type Ktv2Interface interface {
 	EpochInterval(opts *bind.CallOpts) (uint16, error)
 	UserStks(opts *bind.CallOpts, address common.Address) (*big.Int, error)
 	Vote(opts *bind.TransactOpts, recipient common.Address, data string) (*types.Transaction, error)
+	ResetVote(opts *bind.TransactOpts, recipient common.Address) (*types.Transaction, error)
 	Rwd(opts *bind.TransactOpts, recipient common.Address, amount *big.Int) (*types.Transaction, error)
 	BlockRwd(opts *bind.CallOpts, blockNumber *big.Int, recipient common.Address) (uint16, error)
 	ConsensusReq(opts *bind.CallOpts) (uint16, error)
@@ -142,18 +170,20 @@ type ConnectionProps struct {
 	// re-querying it every epoch is wasteful. Nil = first use will create it.
 	DeclinesCache map[common.Address]bool
 
-	// ConfirmationDepth — how many blocks past the epoch end to sample the
-	// lottery seed at (Phase 6b). Zero means "use DefaultConfirmationDepth".
+	// ConfirmationDepth — how many blocks past the SEED block (endBlock +
+	// SeedOffset) the node waits before submitting its vote, so the seed
+	// block is buried under enough confirmations to have settled. Controls
+	// submission timing / reorg burial ONLY; it does NOT change which block
+	// seeds the lottery. Zero means "use DefaultConfirmationDepth".
 	ConfirmationDepth uint64
 
-	// Phase 6c — TTL caches for "current state" contract reads. See
-	// state_cache.go for the helpers that consult these. Concurrent-safe
+	// cachedGasPrice memoizes SuggestGasPrice with a short TTL (60s). Gas
+	// price is cosmetic / a tx default only — never gates consensus or a
+	// transaction's success — so a stale read is harmless. Concurrent-safe
 	// (sync.Mutex inside cachedValue). Do not read or write directly.
-	cachedStartBlock    cachedValue[*big.Int]
-	cachedEpochInterval cachedValue[uint16]
-	cachedConsensusReq  cachedValue[uint16]
-	cachedTlOcFees      cachedValue[*big.Int]
-	cachedGasPrice      cachedValue[*big.Int] // Phase 6e (60s TTL)
+	// Contract state that DOES gate a tx or the seed is intentionally never
+	// cached here; see state_cache.go.
+	cachedGasPrice cachedValue[*big.Int]
 }
 
 // Addresses holds Ethereum addresses and private keys from environment variables.

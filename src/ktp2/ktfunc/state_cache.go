@@ -1,30 +1,25 @@
 package ktfunc
 
-// Phase 6c — TTL cache for "current" contract state reads.
+// TTL cache for gas-price suggestions.
 //
-// StartBlock / EpochInterval / ConsensusReq / TlOcFees are queried every
-// VoteAndReward invocation but change very rarely on-chain. With the
-// node running in a loop (default WaitDuration = 1 min between epochs)
-// this was 4-5 round trips per loop iteration that didn't need to
-// happen. A 30-second TTL closes that gap with no consensus risk —
-// even if state changes mid-window, the staleness is bounded.
-//
-// Important: this cache ONLY applies to the "current state" reads (i.e.
-// nil BlockNumber in the call opts). State-at-block queries (e.g.,
-// `Kt.StartBlock(BlockNumber: prevBlock)` in rwd.go) bypass the cache.
+// Contract state that gates a transaction or the lottery seed (StartBlock,
+// EpochInterval, ConsensusReq, TlOcFees) is deliberately NOT cached: a stale
+// read of any of them makes the node act on an already-rewarded epoch (the
+// tx then reverts) or shifts endBlock so two nodes seed the lottery from
+// different blocks. Those are always read fresh from the contract. The
+// gas-price suggestion is the only value cached here — it is cosmetic / a tx
+// default and never gates consensus or a transaction's success, so a stale
+// read is harmless and saves an RPC call per loop iteration.
 
 import (
 	"context"
 	"math/big"
 	"sync"
 	"time"
-
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
 const (
-	contractStateCacheTTL = 30 * time.Second
-	gasPriceCacheTTL      = 60 * time.Second
+	gasPriceCacheTTL = 60 * time.Second
 )
 
 // cachedValue is a single-entry TTL cache safe for concurrent access. Zero
@@ -55,57 +50,6 @@ func (c *cachedValue[T]) Set(v T, ttl time.Duration) {
 	c.value = v
 	c.expiresAt = time.Now().Add(ttl)
 	c.hasValue = true
-}
-
-// cachedStartBlock returns the contract's current StartBlock, hitting the
-// chain at most once per contractStateCacheTTL. Use this for "what's the
-// current epoch start?" — NOT for `StartBlock(BlockNumber: X)` queries.
-func cachedStartBlock(cProps *ConnectionProps) (*big.Int, error) {
-	if v, ok := cProps.cachedStartBlock.Get(); ok {
-		return new(big.Int).Set(v), nil
-	}
-	v, err := cProps.Kt.StartBlock(&bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey})
-	if err != nil {
-		return nil, err
-	}
-	cProps.cachedStartBlock.Set(new(big.Int).Set(v), contractStateCacheTTL)
-	return v, nil
-}
-
-func cachedEpochInterval(cProps *ConnectionProps) (uint16, error) {
-	if v, ok := cProps.cachedEpochInterval.Get(); ok {
-		return v, nil
-	}
-	v, err := cProps.Kt.EpochInterval(&bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey})
-	if err != nil {
-		return 0, err
-	}
-	cProps.cachedEpochInterval.Set(v, contractStateCacheTTL)
-	return v, nil
-}
-
-func cachedConsensusReq(cProps *ConnectionProps) (uint16, error) {
-	if v, ok := cProps.cachedConsensusReq.Get(); ok {
-		return v, nil
-	}
-	v, err := cProps.Kt.ConsensusReq(&bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey})
-	if err != nil {
-		return 0, err
-	}
-	cProps.cachedConsensusReq.Set(v, contractStateCacheTTL)
-	return v, nil
-}
-
-func cachedTlOcFees(cProps *ConnectionProps) (*big.Int, error) {
-	if v, ok := cProps.cachedTlOcFees.Get(); ok {
-		return new(big.Int).Set(v), nil
-	}
-	v, err := cProps.Kt.TlOcFees(&bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey})
-	if err != nil {
-		return nil, err
-	}
-	cProps.cachedTlOcFees.Set(new(big.Int).Set(v), contractStateCacheTTL)
-	return v, nil
 }
 
 // cachedSuggestGasPrice returns the eth client's gas-price suggestion,

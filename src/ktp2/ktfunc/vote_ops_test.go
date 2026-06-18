@@ -60,6 +60,12 @@ func (m *MockKtv2) Vote(opts *bind.TransactOpts, recipient common.Address, data 
 	return args.Get(0).(*types.Transaction), args.Error(1)
 }
 
+// ResetVote mock
+func (m *MockKtv2) ResetVote(opts *bind.TransactOpts, recipient common.Address) (*types.Transaction, error) {
+	args := m.Called(opts, recipient)
+	return args.Get(0).(*types.Transaction), args.Error(1)
+}
+
 // Rwd mock
 func (m *MockKtv2) Rwd(opts *bind.TransactOpts, recipient common.Address, amount *big.Int) (*types.Transaction, error) {
 	args := m.Called(opts, recipient, amount)

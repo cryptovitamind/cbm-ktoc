@@ -32,10 +32,10 @@ func GetOwedEpochBlocks(cProps *ConnectionProps, addr common.Address, startBlock
 		return nil, fmt.Errorf("Chunk size cannot be zero. Set it using -chunkSize or CHUNK_SIZE env var")
 	}
 
-	// Phase 6d — per-invocation TransactionByHash cache. The same tx hash
-	// can drive multiple events (Voted then Rwd, or multiple Voted's in
-	// one tx), and looking it up is an RPC each time. We cache the
-	// (tx, isPending, err) tuple by hash for the duration of this call.
+	// Per-invocation TransactionByHash cache. The same tx hash can drive
+	// multiple events (Voted then Rwd, or multiple Voted's in one tx), and
+	// looking it up is an RPC each time. We cache the (tx, isPending, err)
+	// tuple by hash for the duration of this call.
 	type txLookup struct {
 		tx        *types.Transaction
 		isPending bool

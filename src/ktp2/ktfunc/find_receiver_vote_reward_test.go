@@ -124,7 +124,7 @@ func TestVoteAndReward_NoStakes(t *testing.T) {
 		ChainID:           big.NewInt(1),
 		BlocksToWait:      0,
 		ChunkSize:         500,
-		ConfirmationDepth: 1, // keep test's endBlock+1 expectation
+		ConfirmationDepth: 1, // seed block = endBlock+SeedOffset, wait one more
 	}
 
 	privateKey, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
@@ -148,12 +148,17 @@ func TestVoteAndReward_NoStakes(t *testing.T) {
 	mockClient.On("CodeAt", mock.Anything, cProps.KtAddr, mock.Anything).Return([]byte{0x60, 0x80}, nil)
 	mockClient.On("BlockNumber", mock.Anything).Return(uint64(120), nil)
 
-	// Mock next block for voting
-	nextHeader := &types.Header{Number: big.NewInt(111)}
-	mockClient.On("HeaderByNumber", mock.Anything, big.NewInt(111)).Return(nextHeader, nil)
-	// Phase 6g: realGatherStakesAndWithdraws now also calls HeaderByNumber
-	// when advancing the cache tip (to record tipHash). Catchall for any
-	// other block number queries; specific mocks above still take precedence.
+	// Seed block is endBlock+SeedOffset; the node then waits for it to be buried
+	// by ConfirmationDepth(1) more blocks (the confirmation block) before reading
+	// the seed hash.
+	seedBlockNum := new(big.Int).SetUint64(endBlock.Uint64() + SeedOffset)
+	confirmBlockNum := new(big.Int).Add(seedBlockNum, big.NewInt(1))
+	seedHeader := &types.Header{Number: seedBlockNum}
+	mockClient.On("HeaderByNumber", mock.Anything, confirmBlockNum).Return(&types.Header{Number: confirmBlockNum}, nil)
+	mockClient.On("HeaderByNumber", mock.Anything, seedBlockNum).Return(seedHeader, nil)
+	// realGatherStakesAndWithdraws also calls HeaderByNumber when advancing the
+	// cache tip (to record tipHash). Catchall for any other block number
+	// queries; specific mocks above still take precedence.
 	mockClient.On("HeaderByNumber", mock.Anything, mock.Anything).Return(&types.Header{}, nil).Maybe()
 
 	// Mock empty stake and withdraw iterators
@@ -165,7 +170,7 @@ func TestVoteAndReward_NoStakes(t *testing.T) {
 
 	// Since empty, totalMin=0, winner=zero
 	zeroAddr := common.Address{}
-	voteData := nextHeader.Hash().Hex()
+	voteData := seedHeader.Hash().Hex()
 	mockTx := types.NewTransaction(0, zeroAddr, big.NewInt(0), 0, big.NewInt(0), []byte{})
 	mockKt.On("Vote", mock.Anything, zeroAddr, voteData).Return(mockTx, nil).Maybe()
 
@@ -201,7 +206,7 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 		ChainID:           big.NewInt(1),
 		BlocksToWait:      0,
 		ChunkSize:         500,
-		ConfirmationDepth: 1, // keep test's endBlock+1 expectation
+		ConfirmationDepth: 1, // seed block = endBlock+SeedOffset, wait one more
 	}
 
 	privateKey, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
@@ -225,10 +230,14 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 	mockClient.On("CodeAt", mock.Anything, cProps.KtAddr, mock.Anything).Return([]byte{0x60, 0x80}, nil)
 	mockClient.On("BlockNumber", mock.Anything).Return(uint64(120), nil)
 
-	// Mock next block
-	nextHeader := &types.Header{Number: big.NewInt(111)}
-	mockClient.On("HeaderByNumber", mock.Anything, big.NewInt(111)).Return(nextHeader, nil)
-	// Phase 6g catchall (see TestVoteAndReward_NoStakes for rationale).
+	// Seed block = endBlock+SeedOffset; wait for it to be buried by
+	// ConfirmationDepth(1) more blocks (the confirmation block).
+	seedBlockNum := new(big.Int).SetUint64(endBlock.Uint64() + SeedOffset)
+	confirmBlockNum := new(big.Int).Add(seedBlockNum, big.NewInt(1))
+	seedHeader := &types.Header{Number: seedBlockNum}
+	mockClient.On("HeaderByNumber", mock.Anything, confirmBlockNum).Return(&types.Header{Number: confirmBlockNum}, nil)
+	mockClient.On("HeaderByNumber", mock.Anything, seedBlockNum).Return(seedHeader, nil)
+	// Catchall for tip-recording HeaderByNumber calls; specific mocks win.
 	mockClient.On("HeaderByNumber", mock.Anything, mock.Anything).Return(&types.Header{}, nil).Maybe()
 
 	// Mock stake event: one staker at block 40 (pre-epoch) with 1000 wei.
@@ -250,7 +259,7 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 	mockKt.On("Declines", mock.Anything, stakerAddr).Return(false, nil)
 
 	// Winner will be stakerAddr, vote for it
-	voteData := nextHeader.Hash().Hex()
+	voteData := seedHeader.Hash().Hex()
 	voteTx := types.NewTransaction(0, stakerAddr, big.NewInt(0), 0, big.NewInt(0), []byte{})
 	mockKt.On("Vote", mock.Anything, stakerAddr, voteData).Return(voteTx, nil)
 
@@ -449,7 +458,7 @@ func TestRewardWinningWallet_OCFeesExceedBalance(t *testing.T) {
 }
 
 // ============================================================================
-// Phase 5c — rewardWinningWallet error-variant tests.
+// rewardWinningWallet error-variant tests.
 //
 // Existing tests above cover the OC-fee subtraction math. These cover the
 // error paths: Rwd failures (with the special "Epoch incomplete" swallow),
@@ -544,17 +553,18 @@ func TestRewardWinningWallet_TlOcFeesFailurePropagates(t *testing.T) {
 }
 
 // ============================================================================
-// Phase 6b — confirmation-depth tests.
+// confirmation-depth / seed-block tests.
 //
 // The lottery seed block is now `endBlock + cProps.ConfirmationDepth` (was
 // always +1 pre-Phase-6b). These tests pin both the configurable behavior
 // and the default-of-5 fallback so a future refactor can't quietly flip
 // either back.
 
-// TestCalculateVoteAndReward_UsesConfirmationDepthForSeedBlock — set
-// ConfirmationDepth = 7; assert HeaderByNumber is queried for endBlock+7
-// (not +1), and the hash from THAT block is what calcWinningWallet sees.
-func TestCalculateVoteAndReward_UsesConfirmationDepthForSeedBlock(t *testing.T) {
+// TestCalculateVoteAndReward_SeedsAtFixedOffsetAndWaitsForDepth — set
+// ConfirmationDepth = 7; assert the seed is sampled from the FIXED block
+// endBlock+SeedOffset (its hash is what calcWinningWallet sees), and that the
+// node waits for that seed block to be buried by 7 more blocks before voting.
+func TestCalculateVoteAndReward_SeedsAtFixedOffsetAndWaitsForDepth(t *testing.T) {
 	logrus.SetLevel(logrus.FatalLevel)
 
 	mockClient := &MockEthClient{}
@@ -575,7 +585,8 @@ func TestCalculateVoteAndReward_UsesConfirmationDepthForSeedBlock(t *testing.T) 
 	stakerAddr := common.HexToAddress("0xabc123456789012345678901234567890123456")
 	startBlock := big.NewInt(50)
 	endBlock := big.NewInt(110)
-	seedBlockNum := new(big.Int).Add(endBlock, big.NewInt(7))
+	seedBlockNum := new(big.Int).SetUint64(endBlock.Uint64() + SeedOffset)
+	confirmBlockNum := new(big.Int).Add(seedBlockNum, big.NewInt(7))
 
 	stakeDataMins := map[common.Address]*UserStakeData{
 		stakerAddr: {StakeAmount: big.NewInt(1000), Prob: new(big.Float).SetFloat64(1.0)},
@@ -591,10 +602,11 @@ func TestCalculateVoteAndReward_UsesConfirmationDepthForSeedBlock(t *testing.T) 
 	})
 	defer SetCalculateWinningWallet(origCalc)
 
-	// HeaderByNumber must be queried at endBlock+7, NOT endBlock+1.
+	// The node waits for the confirmation block (seed + depth), then reads the
+	// seed block. The seed hash comes from the seed block, NOT the confirmation block.
 	seedHeader := &types.Header{Number: seedBlockNum, ParentHash: expectedSeedHash}
-	// The block hash exposed by Hash() depends on header contents; rather than
-	// reconstruct it, assert the function asked for the right block number.
+	mockClient.On("HeaderByNumber", mock.Anything, confirmBlockNum).Return(
+		&types.Header{Number: confirmBlockNum}, nil)
 	mockClient.On("HeaderByNumber", mock.Anything, seedBlockNum).Return(seedHeader, nil)
 
 	mockKt.On("Vote", mock.Anything, stakerAddr, mock.AnythingOfType("string")).Return(
@@ -609,6 +621,9 @@ func TestCalculateVoteAndReward_UsesConfirmationDepthForSeedBlock(t *testing.T) 
 
 	_, err := calculateVoteAndReward(stakeDataMins, startBlock, endBlock, cProps, big.NewInt(1000))
 	assert.NoError(t, err)
+	// Waited for the depth-driven confirmation block, and seeded from the fixed
+	// offset block.
+	mockClient.AssertCalled(t, "HeaderByNumber", mock.Anything, confirmBlockNum)
 	mockClient.AssertCalled(t, "HeaderByNumber", mock.Anything, seedBlockNum)
 	if capturedHash != seedHeader.Hash() {
 		t.Errorf("calcWinningWallet got block hash %s, want %s (seed block %d's hash)",
@@ -643,7 +658,10 @@ func TestCalculateVoteAndReward_ZeroConfirmationDepthFallsBackToDefault(t *testi
 
 	stakerAddr := common.HexToAddress("0xabc123456789012345678901234567890123456")
 	endBlock := big.NewInt(110)
-	expectedSeedNum := new(big.Int).Add(endBlock, big.NewInt(int64(DefaultConfirmationDepth)))
+	// Seed is always endBlock+SeedOffset; with ConfirmationDepth 0 the node
+	// waits DefaultConfirmationDepth more blocks before voting.
+	seedBlockNum := new(big.Int).SetUint64(endBlock.Uint64() + SeedOffset)
+	confirmBlockNum := new(big.Int).Add(seedBlockNum, new(big.Int).SetUint64(DefaultConfirmationDepth))
 
 	stakeDataMins := map[common.Address]*UserStakeData{
 		stakerAddr: {StakeAmount: big.NewInt(1000), Prob: new(big.Float).SetFloat64(1.0)},
@@ -655,8 +673,10 @@ func TestCalculateVoteAndReward_ZeroConfirmationDepthFallsBackToDefault(t *testi
 	})
 	defer SetCalculateWinningWallet(origCalc)
 
-	mockClient.On("HeaderByNumber", mock.Anything, expectedSeedNum).Return(
-		&types.Header{Number: expectedSeedNum}, nil)
+	mockClient.On("HeaderByNumber", mock.Anything, confirmBlockNum).Return(
+		&types.Header{Number: confirmBlockNum}, nil)
+	mockClient.On("HeaderByNumber", mock.Anything, seedBlockNum).Return(
+		&types.Header{Number: seedBlockNum}, nil)
 	mockKt.On("Vote", mock.Anything, stakerAddr, mock.AnythingOfType("string")).Return(
 		types.NewTransaction(0, common.Address{}, big.NewInt(0), 0, big.NewInt(0), []byte{}), nil)
 	mockKt.On("BlockRwd", mock.Anything, big.NewInt(50), stakerAddr).Return(uint16(1), nil)
@@ -669,5 +689,6 @@ func TestCalculateVoteAndReward_ZeroConfirmationDepthFallsBackToDefault(t *testi
 
 	_, err := calculateVoteAndReward(stakeDataMins, big.NewInt(50), endBlock, cProps, big.NewInt(1000))
 	assert.NoError(t, err)
-	mockClient.AssertCalled(t, "HeaderByNumber", mock.Anything, expectedSeedNum)
+	// Default depth applied → waited for seedBlock + DefaultConfirmationDepth.
+	mockClient.AssertCalled(t, "HeaderByNumber", mock.Anything, confirmBlockNum)
 }
