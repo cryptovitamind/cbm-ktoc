@@ -441,7 +441,7 @@ func migrateOrInitFeesCacheSchema(db *bbolt.DB) error {
 // openFeesDB opens the fees database and creates the bucket if needed.
 func openFeesDB(cProps *ConnectionProps) (*bbolt.DB, error) {
 	// Ensure cache directory exists
-	cacheDir := "cache"
+	cacheDir := cProps.ResolvedCacheDir()
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		log.Errorf("Failed to create cache directory: %v", err)
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)

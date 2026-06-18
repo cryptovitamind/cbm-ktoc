@@ -890,7 +890,7 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 		return nil, fmt.Errorf("start block %d exceeds end block %d", startBlock.Uint64(), endBlock.Uint64())
 	}
 	// Ensure cache directory exists
-	cacheDir := "cache"
+	cacheDir := cProps.ResolvedCacheDir()
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		log.Errorf("Failed to create cache directory: %v", err)
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)

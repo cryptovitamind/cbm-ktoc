@@ -165,6 +165,10 @@ type ConnectionProps struct {
 	V2Uniswap      bool                 // If true, use Uniswap V2, else V1.
 	ChunkSize      int                  // Size of chunks for processing large data sets
 	WaitDuration   time.Duration        // Duration to wait between operations
+	// CacheDir is the directory for the on-disk event/fees caches. Empty means
+	// the default "cache". Set a distinct dir per node when running several
+	// operator instances on one machine so their bbolt caches don't collide.
+	CacheDir string
 	// DeclinesCache memoizes Declines() lookups for the lifetime of the
 	// process. Declines is a contract state read and rarely changes, so
 	// re-querying it every epoch is wasteful. Nil = first use will create it.
@@ -184,6 +188,15 @@ type ConnectionProps struct {
 	// Contract state that DOES gate a tx or the seed is intentionally never
 	// cached here; see state_cache.go.
 	cachedGasPrice cachedValue[*big.Int]
+}
+
+// ResolvedCacheDir returns the directory for on-disk caches, defaulting to
+// "cache" when CacheDir is unset.
+func (cProps *ConnectionProps) ResolvedCacheDir() string {
+	if cProps.CacheDir != "" {
+		return cProps.CacheDir
+	}
+	return "cache"
 }
 
 // Addresses holds Ethereum addresses and private keys from environment variables.
