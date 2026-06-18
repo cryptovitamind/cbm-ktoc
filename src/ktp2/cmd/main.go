@@ -10,7 +10,9 @@ import (
 	"ktp2/src/ktp2/tests"
 	"math/big"
 	"math/rand"
+	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +78,11 @@ type Flags struct {
 	waitDuration          time.Duration
 	verifyLastWinner      bool
 	confirmationDepth     uint64
+	logDir                string
+	zipLogs               bool
+	showVotes             bool
+	voteFor               string
+	resetLotteryVote      string
 }
 
 func main() {
@@ -84,6 +91,20 @@ func main() {
 	if flags.help || flag.NFlag() == 0 {
 		flag.Usage()
 		os.Exit(0)
+	}
+
+	// --zipLogs is standalone: bundle recent logs and exit, without needing a
+	// full configuration or an RPC connection.
+	if flags.zipLogs {
+		runZipLogs(flags.logDir)
+		os.Exit(0)
+	}
+
+	// Mirror all logging into a rotating file so operators can send us logs.
+	if logPath, err := ktfunc.SetupFileLogging(flags.logDir); err != nil {
+		log.Warnf("Could not set up file logging in %s: %v (continuing with stdout only)", flags.logDir, err)
+	} else {
+		log.Infof("Logging to %s (bundle with: ktoc -zipLogs)", logPath)
 	}
 
 	mProps := loadMasterProperties()
@@ -130,12 +151,47 @@ func loadMasterProperties() ktfunc.Addresses {
 	return mProps
 }
 
+// bannerVersion is the single source of truth for the build's identity. It is
+// rendered in the startup banner and recorded in --zipLogs bundles, so the
+// version an operator is running is always visible to them and to us.
+const bannerVersion = "v0.4.5-beta"
+
+// runZipLogs bundles recent log files into a zip in the current directory and
+// prints its path, so an operator can attach it to a bug report. The metadata
+// records the build identity and environment but never the RPC API key.
+func runZipLogs(logDir string) {
+	host, _ := os.Hostname()
+	meta := fmt.Sprintf(
+		"ktoc version: %s\nos/arch: %s/%s\ngo: %s\nrpc host: %s\ngenerated: %s\n",
+		bannerVersion, runtime.GOOS, runtime.GOARCH, runtime.Version(),
+		rpcHost(os.Getenv("ETH_ENDPOINT")), time.Now().Format(time.RFC3339),
+	)
+	zipPath, err := ktfunc.ZipLogs(logDir, ".", host, meta, time.Now(), 7*24*time.Hour)
+	if err != nil {
+		log.Fatalf("Failed to bundle logs from %s: %v", logDir, err)
+	}
+	fmt.Printf("Logs bundled into: %s\n", zipPath)
+}
+
+// rpcHost extracts just the host from an RPC endpoint so an API key embedded in
+// the URL's path or query never lands in a shared bundle.
+func rpcHost(endpoint string) string {
+	if endpoint == "" {
+		return "(unset)"
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return "(unparseable)"
+	}
+	return u.Host
+}
+
 func displayStartupBanner() {
 	fmt.Print("\n")
 	fmt.Print("──────────────────────────────────────────────────────────────────────────────────────────\n")
 	fmt.Print("\n")
 	figure.NewColorFigure("KTOC", "larry3d", "red", true).Print()
-	figure.NewColorFigure("v0.4.4-beta", "larry3d", "red", true).Print()
+	figure.NewColorFigure(bannerVersion, "larry3d", "red", true).Print()
 	fmt.Print("\n")
 	figure.NewColorFigure("shinatoken", "binary", "red", true).Print()
 	fmt.Print("\n")
@@ -178,7 +234,7 @@ func parseFlags() Flags {
 	withdrawFees := flag.String("withdrawFees", "", "Withdraw owed fees from kt. syntax: <block1>,<block2>,<blockn>,..., use 'auto' to attempt to withdraw all owed fees.")
 	setOCFeePtr := flag.Uint("setOCFee", 0, "Set the OC fee to the specified uint16 value. Multiply by ten. For example, use 20 for 2% fee.")
 	currentBlock := flag.Bool("currentBlock", false, "Print the current Ethereum block number. Useful for fetching fees owed.")
-	waitDuration := flag.Duration("waitDuration", ktfunc.TimeToWaitForBlocks, "Set the duration to wait between operations (ex: 1s, 2m). Default is 1 minute.")
+	waitDuration := flag.Duration("waitDuration", ktfunc.DefaultWaitDuration, "Set the duration to wait between vote-cycle iterations (ex: 1s, 2m). Default is 1 minute.")
 	printEvents := flag.Bool("printEvents", false, "Print the contents of the cache for debugging purposes.")
 	v2Uniswap := flag.Bool("v2Uniswap", false, "Use Uniswap V2 instead of V3 for token swaps. Set this if your token pool is V3.")
 	chunkSize := flag.Int("chunkSize", 0, "Set the chunk size for processing large data sets. Adjust based on performance needs.")
@@ -190,7 +246,12 @@ func parseFlags() Flags {
 	printOCVoteEvents := flag.String("printOCVoteEvents", "", "Print all OC vote events between <fromBlock>:<toBlock>")
 
 	verifyLastWinner := flag.Bool("verifyLastWinner", false, "Verify that the last rewarded winner was correctly and fairly selected by replaying the winner calculation.")
-	confirmationDepth := flag.Uint64("confirmationDepth", 0, fmt.Sprintf("Number of blocks past epochEnd to sample the lottery seed (0 = default %d). Larger values are more reorg-resistant at the cost of voting latency. Can also be set via the CONFIRMATION_DEPTH env var.", ktfunc.DefaultConfirmationDepth))
+	confirmationDepth := flag.Uint64("confirmationDepth", 0, fmt.Sprintf("Blocks to wait after the seed block before submitting a vote, for reorg safety (0 = default %d). This does NOT change which block seeds the lottery (always a fixed offset past epochEnd), so it is safe for operators to set differently. Larger = more reorg-resistant, more voting latency. Can also be set via the CONFIRMATION_DEPTH env var.", ktfunc.DefaultConfirmationDepth))
+	logDir := flag.String("logDir", "logs", "Directory to write log files to. Logs are mirrored from stdout into a rotating file here.")
+	zipLogs := flag.Bool("zipLogs", false, "Bundle recent log files into a zip in the current directory (for sending a bug report), then exit.")
+	showVotes := flag.Bool("showVotes", false, "Print the current epoch's reward votes: per-candidate tallies and which OC voted for which address.")
+	voteFor := flag.String("voteFor", "", "Manually cast a reward vote for the given address in the current epoch, overriding the lottery. Use to converge a stuck epoch on an agreed winner.")
+	resetLotteryVote := flag.String("resetLotteryVote", "", "Undo this node's reward vote for the given address (the one you previously voted for) in the current epoch, so you can re-vote.")
 
 	// Testing Commands (for development and testing)
 	continuous := flag.Bool("continuous", false, "TESTING: Run continuous operations in a loop, simulating various actions (e.g., staking, giving ETH). For development use only.")
@@ -231,6 +292,12 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -setOCFee <n>       %s\n", "Set the OC fee to the specified uint16 value. Multiply by ten. For example, use 20 for 2% fee.")
 		fmt.Fprintf(os.Stderr, "  -withdrawFees       %s\n", "Withdraw owed fees from kt.")
 		fmt.Fprintf(os.Stderr, "  -verifyLastWinner   %s\n", "Verify the last rewarded winner was correctly and fairly selected.")
+		fmt.Fprintf(os.Stderr, "  -showVotes          %s\n", "Show the current epoch's reward votes: per-candidate tallies and which OC voted for which address.")
+		fmt.Fprintf(os.Stderr, "  -voteFor <address>  %s\n", "Manually cast a reward vote for an address this epoch (override the lottery). Use to converge a stuck epoch.")
+		fmt.Fprintf(os.Stderr, "  -resetLotteryVote <address> %s\n", "Undo this node's reward vote (the address you voted for) so you can re-vote this epoch.")
+		fmt.Fprintf(os.Stderr, "  -zipLogs            %s\n", "Bundle recent log files into a zip in the current directory for a bug report, then exit.")
+		fmt.Fprintf(os.Stderr, "  -logDir <dir>       %s\n", "Directory for log files (default: logs).")
+		fmt.Fprintf(os.Stderr, "  -confirmationDepth <n> %s\n", "Blocks to wait after the seed block before voting, for reorg safety (does not change the winner).")
 		PrintOCUsage()
 
 		fmt.Fprintf(os.Stderr, "\n🛠️ Testing Commands (Local Dev Use Only):\n")
@@ -288,6 +355,11 @@ func parseFlags() Flags {
 		printStakeEvents:      *printStakeEvents,
 		verifyLastWinner:      *verifyLastWinner,
 		confirmationDepth:     *confirmationDepth,
+		logDir:                *logDir,
+		zipLogs:               *zipLogs,
+		showVotes:             *showVotes,
+		voteFor:               *voteFor,
+		resetLotteryVote:      *resetLotteryVote,
 	}
 }
 
@@ -451,6 +523,33 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 	if flags.vote {
 		LogOperationStart("Finding receiver for voting")
 		ktfunc.VoteAndReward(cProps)
+	}
+
+	if flags.showVotes {
+		LogOperationStart("Showing current-epoch vote status")
+		if err := ktfunc.PrintEpochVoteStatus(cProps); err != nil {
+			log.Errorf("Failed to show vote status: %v", err)
+		}
+	}
+
+	if flags.voteFor != "" {
+		LogOperationStart("Manually voting for a specific address")
+		if !common.IsHexAddress(flags.voteFor) {
+			log.Fatalf("Invalid -voteFor address: %q", flags.voteFor)
+		}
+		if err := ktfunc.VoteForAddress(cProps, common.HexToAddress(flags.voteFor)); err != nil {
+			log.Errorf("Manual vote failed: %v", err)
+		}
+	}
+
+	if flags.resetLotteryVote != "" {
+		LogOperationStart("Resetting this node's lottery vote")
+		if !common.IsHexAddress(flags.resetLotteryVote) {
+			log.Fatalf("Invalid -resetLotteryVote address: %q", flags.resetLotteryVote)
+		}
+		if err := ktfunc.ResetLotteryVote(cProps, common.HexToAddress(flags.resetLotteryVote)); err != nil {
+			log.Errorf("Reset vote failed: %v", err)
+		}
 	}
 
 	if flags.run {
@@ -622,20 +721,9 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 		cProps.ChunkSize = ktfunc.DefaultChunkSize
 	}
 
-	duration := ktfunc.TimeToWaitForBlocks
-	if mstProps.WaitDuration != "" {
-		if parsed, err := time.ParseDuration(mstProps.WaitDuration); err != nil {
-			log.Warnf("Invalid wait duration '%s': %v. Using default: %v",
-				mstProps.WaitDuration, err, ktfunc.TimeToWaitForBlocks)
-		} else {
-			duration = parsed
-		}
-	}
-
-	// Override with flags if different from default
-	if flags.waitDuration != ktfunc.TimeToWaitForBlocks {
+	duration := ktfunc.ResolveWaitDuration(mstProps.WaitDuration, flags.waitDuration)
+	if flags.waitDuration != ktfunc.DefaultWaitDuration {
 		log.Infof("Overriding wait duration with command line flag: %v", flags.waitDuration)
-		duration = flags.waitDuration
 	}
 
 	cProps.WaitDuration = duration
@@ -747,13 +835,26 @@ func getKtInstance(client bind.ContractBackend, ktAddr common.Address) (ktfunc.K
 }
 
 func KeepRunning(cProps *ktfunc.ConnectionProps) {
+	consecutiveErrors := 0
 	for {
-		err := ktfunc.VoteAndReward(cProps)
-		if err != nil {
-			log.Printf("Error in VoteAndReward: %v", err)
+		if err := runOnce(cProps); err != nil {
+			consecutiveErrors++
+			log.Printf("Error in VoteAndReward (consecutive failures: %d): %v", consecutiveErrors, err)
+		} else {
+			consecutiveErrors = 0
 		}
 
-		log.Printf("Iteration complete. Sleeping for %d seconds", int(cProps.WaitDuration.Seconds()))
-		time.Sleep(time.Duration(cProps.WaitDuration))
+		// Back off exponentially while failing so a broken RPC endpoint or a
+		// stalled chain doesn't get hammered every interval; reset to the
+		// normal cadence on the first success.
+		sleep := ktfunc.BackoffDuration(cProps.WaitDuration, consecutiveErrors)
+		log.Printf("Iteration complete. Sleeping for %s", sleep)
+		time.Sleep(sleep)
 	}
+}
+
+// runOnce performs a single vote/reward cycle. Extracted so the backoff
+// bookkeeping in KeepRunning stays small and the cycle is callable on its own.
+func runOnce(cProps *ktfunc.ConnectionProps) error {
+	return ktfunc.VoteAndReward(cProps)
 }

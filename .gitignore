@@ -49,3 +49,6 @@ src/ktp2/coverage
 # Built binary output of `./build.sh` / `build.ps1`
 /cmd
 /ktoc
+
+# Local live integration-test harness (dev node, deploy + multi-node scripts)
+/integration-test/
