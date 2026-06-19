@@ -4,8 +4,8 @@ package ktfunc
 // (blockRwd[startBlock][candidate] for tallies, ocRwdrVote[oc][startBlock] for
 // who-voted-what) which can't be enumerated directly. We reconstruct them from
 // the Voted events of the current epoch, resolving each voter from its tx
-// sender, so an operator can see exactly how the epoch stands — which is what
-// tells them whether it's progressing or wedged.
+// sender, so an operator can see exactly how the epoch stands and tell whether
+// it's progressing or wedged.
 
 import (
 	"context"
@@ -64,7 +64,7 @@ func PrintEpochVoteStatus(cProps *ConnectionProps) error {
 	log.Printf("Epoch vote status (epoch start %s, ends at block %s, consensusReq %d):",
 		startBlock.String(), endBlock.String(), required)
 	if head <= endBlock.Uint64() {
-		log.Printf("  Epoch is not yet complete (head %d ≤ end %d) — voting has not opened.", head, endBlock.Uint64())
+		log.Printf("  Epoch is not yet complete (head %d <= end %d). Voting has not opened.", head, endBlock.Uint64())
 	}
 
 	if len(votes) == 0 {

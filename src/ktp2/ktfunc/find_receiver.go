@@ -447,8 +447,8 @@ func filterDeclinedStakers(stakeDataMinsMap map[common.Address]*UserStakeData, c
 // probabilities in stakeDataMinsMap: prob_i = log(1+stake_i) / sum(log(1+stake_j)).
 //
 // Larger stakes still win more often, but the log compresses disparities so
-// a wallet with 1000x more stake is only modestly more likely to win — not
-// 1000x — preventing whales from drowning out smaller stakers.
+// a wallet with 1000x more stake is only modestly more likely to win, not
+// 1000x. This keeps whales from drowning out smaller stakers.
 //
 // We use log1p (log(1+x)) instead of log(x) so a 1-wei stake gets a small
 // but non-zero probability instead of being silently excluded (log(1)=0).
@@ -661,7 +661,7 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address, totalMi
 
 // WaitForBlocks blocks until the chain has advanced by cProps.BlocksToWait
 // blocks from the moment of the call. Tries SubscribeNewHead first (one
-// connection, headers streamed as they arrive) — saves ~24 BlockNumber
+// connection, headers streamed as they arrive), saving ~24 BlockNumber
 // polls per call on a 12s/block chain. Falls back to the legacy polling
 // loop when subscriptions aren't supported (HTTP-only endpoints).
 //
@@ -704,7 +704,7 @@ func WaitForBlocks(cProps *ConnectionProps) error {
 	return nil
 }
 
-// waitForBlocksDeadline gives ~30 seconds per expected block — generous
+// waitForBlocksDeadline gives ~30 seconds per expected block. That is generous
 // for normal 12s/block chains, but bounded so a stalled chain doesn't
 // hang the node indefinitely.
 func waitForBlocksDeadline(blocksToWait uint64) time.Duration {
@@ -907,8 +907,8 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 	}
 	defer db.Close()
 	// Buckets:
-	//   chunks — key = 8-byte BE chunkStart, value = gob ChunkEvents
-	//   meta   — keys:
+	//   chunks: key = 8-byte BE chunkStart, value = gob ChunkEvents
+	//   meta keys:
 	//     "tip"            = 8-byte BE highest contiguously-processed block
 	//     "schema_version" = 4-byte BE uint32; if absent or older than
 	//                        cacheSchemaVersion, both buckets are wiped on
@@ -958,7 +958,7 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 		if hdrErr != nil {
 			log.Warnf("Reorg check skipped (HeaderByNumber(%d) failed): %v", tip, hdrErr)
 		} else if current != nil && current.Hash() != tipHash {
-			log.Warnf("Reorg detected at cache tip %d: cached=%s, on-chain=%s — wiping chunks and rebuilding",
+			log.Warnf("Reorg detected at cache tip %d: cached=%s, on-chain=%s. Wiping chunks and rebuilding.",
 				tip, tipHash.Hex(), current.Hash().Hex())
 			if wErr := db.Update(func(tx *bbolt.Tx) error {
 				if err := tx.DeleteBucket([]byte("chunks")); err != nil && err != bbolt.ErrBucketNotFound {
@@ -1018,7 +1018,7 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 		if newTip <= tip {
 			return nil
 		}
-		// Record the new tip's block hash so a future call can detect a reorg —
+		// Record the new tip's block hash so a future call can detect a reorg,
 		// but ONLY once the block is buried under reorgSafetyDepth confirmations.
 		// Recording the hash of a near-head block invites false-positive reorg
 		// wipes: recent blocks still reorg under PoS and can read inconsistently
@@ -1161,7 +1161,7 @@ func realGatherStakesAndWithdraws(cProps *ConnectionProps, kt Ktv2Interface, sta
 // Versions:
 //   - 1 (implicit, legacy): chunks bucket only, keys = 16-byte BE
 //     (chunkStart, chunkEnd). No meta bucket. Trailing-chunk keys shifted
-//     every epoch — orphaned by the tip-pointer cache rewrite.
+//     every epoch, orphaned by the tip-pointer cache rewrite.
 //   - 2: chunks bucket with 8-byte BE chunkStart keys; meta bucket with
 //     "tip" pointer and "schema_version" marker.
 //   - 3 (current): adds "tip_hash" alongside "tip" in the meta bucket so the
@@ -1176,7 +1176,7 @@ const cacheSchemaVersion uint32 = 3
 // runs once per process; on subsequent calls the marker matches and the
 // function is a fast no-op that just ensures the buckets exist.
 //
-// This is how the node self-heals across upgrades — operators never have
+// This is how the node self-heals across upgrades, so operators never have
 // to delete cache files manually.
 func migrateOrInitCacheSchema(db *bbolt.DB) error {
 	return db.Update(func(tx *bbolt.Tx) error {
@@ -1190,8 +1190,8 @@ func migrateOrInitCacheSchema(db *bbolt.DB) error {
 			}
 		}
 		if hasStored && stored == cacheSchemaVersion {
-			// Already on the current schema — ensure both buckets exist
-			// (defensive — they should already) and return.
+			// Already on the current schema. Ensure both buckets exist
+			// (defensive; they should already) and return.
 			if _, err := tx.CreateBucketIfNotExists([]byte("chunks")); err != nil {
 				return err
 			}
@@ -1201,7 +1201,7 @@ func migrateOrInitCacheSchema(db *bbolt.DB) error {
 			return nil
 		}
 
-		// Missing or older — wipe and reinitialize. Deletes silently no-op
+		// Missing or older: wipe and reinitialize. Deletes silently no-op
 		// on absent buckets, which is what we want for a fresh DB.
 		if err := tx.DeleteBucket([]byte("chunks")); err != nil && err != bbolt.ErrBucketNotFound {
 			return err
@@ -1257,7 +1257,7 @@ func buildStakeDataMap(stakeEvents []StakeEvent, withdrawEvents []WithdrawEvent)
 			stakeDataMap[addr][e.Block] = &UserStakeData{StakeAmount: big.NewInt(0)}
 		}
 		stakeDataMap[addr][e.Block].StakeAmount.Sub(stakeDataMap[addr][e.Block].StakeAmount, e.Amount)
-		// Do NOT clamp the per-block delta at zero — it must stay signed so
+		// Do NOT clamp the per-block delta at zero. It must stay signed so
 		// withdraws at blocks without a same-block stake aren't silently
 		// erased. findMinOverBlockRange clamps the cumulative stake at zero,
 		// which is the correct place to enforce the on-chain non-negative
@@ -1342,7 +1342,7 @@ func queryChunkWithRetry(cProps *ConnectionProps, kt Ktv2Interface, start, end u
 
 	// queryWithSplit tries a single RPC call for [s, e]. On a retriable
 	// "query too large" error it halves the range and recurses on each
-	// half — up to maxSplitLevels deep. Non-retriable errors and depth
+	// half, up to maxSplitLevels deep. Non-retriable errors and depth
 	// exhaustion propagate.
 	var queryWithSplit func(s, e uint64, depth int) error
 	queryWithSplit = func(s, e uint64, depth int) error {
@@ -1463,8 +1463,8 @@ func findMinOverBlockRange(epochStartBlock, endBlock uint64, stakeDataMap map[co
 				continue
 			}
 			// On the first in-range block, capture currentStake BEFORE applying
-			// this block's delta — that value is the wallet's stake at the
-			// instant the epoch window opens (i.e. their carried-in floor).
+			// this block's delta. That value is the wallet's stake at the
+			// instant the epoch window opens (their carried-in floor).
 			if block >= epochStartBlock && !inRangeProcessed {
 				if minStake == nil || currentStake.Cmp(minStake) < 0 {
 					minStake = new(big.Int).Set(currentStake)

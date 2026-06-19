@@ -9,9 +9,9 @@ package ktfunc
 // expensive eth_getLogs / eth_call counts down.
 //
 // It wraps BOTH roles the node uses the client for: the direct EthClient calls
-// AND the contract-binding backend (bind.ContractBackend) — the latter is where
-// eth_getLogs (FilterStaked/Voted/Rwd) and eth_call (contract reads) actually
-// go, which is the bulk of the traffic.
+// AND the contract-binding backend (bind.ContractBackend). The binding backend
+// is where eth_getLogs (FilterStaked/Voted/Rwd) and eth_call (contract reads)
+// actually go, which is the bulk of the traffic.
 
 import (
 	"context"

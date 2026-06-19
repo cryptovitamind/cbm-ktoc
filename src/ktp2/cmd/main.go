@@ -154,7 +154,7 @@ func loadMasterProperties() ktfunc.Addresses {
 // bannerVersion is the single source of truth for the build's identity. It is
 // rendered in the startup banner and recorded in --zipLogs bundles, so the
 // version an operator is running is always visible to them and to us.
-const bannerVersion = "v0.4.6-beta"
+const bannerVersion = "v0.4.7-beta"
 
 // runZipLogs bundles recent log files into a zip in the current directory and
 // prints its path, so an operator can attach it to a bug report. The metadata
@@ -259,7 +259,7 @@ func parseFlags() Flags {
 	stakeAmount := flag.Int64("stake", 0, "TESTING: Number of tokens to stake from test wallets (in wei, e.g., 1000). Requires -init or configured wallets. Simulates staking behavior.")
 	epochDuration := flag.Int64("epochDuration", 0, "TESTING: Set the epoch duration in blocks (e.g., 3600).")
 	moveBlockForward := flag.Int64("moveBlockForward", 0, "TESTING: Advance a test Ethereum node by n blocks (e.g., 10). Simulates blockchain progression.")
-	keys := flag.Bool("keys", false, "TESTING: Display deterministic private keys for test wallets. For development only—do not use these keys on mainnet!")
+	keys := flag.Bool("keys", false, "TESTING: Display deterministic private keys for test wallets. For development only. Never use these keys on mainnet.")
 	initTestWallets := flag.Bool("init", false, "TESTING: Initialize test wallets with ETH and tokens. Sets up a testing environment. Requires sufficient funds in MY_PUBLIC_KEY.")
 	logStakesAndWithdraws := flag.String("logStakesAndWithdraws", "", "TESTING: Gather stakes and withdrawals from the KT contract. Useful for testing stake data collection logic. Syntax: <startBlock>:<endBlock>.")
 	printStakeEvents := flag.String("printStakeEvents", "", "TESTING: Print Staked events from the KT contract between specified blocks. Syntax: <startBlock>:<endBlock>.")

@@ -33,7 +33,7 @@ const (
 	// DefaultConfirmationDepth is how many blocks past the seed block the
 	// node waits before SUBMITTING its vote, so the seed block is buried
 	// under enough confirmations to have settled. It controls submission
-	// timing / reorg burial ONLY — it does NOT change which block seeds the
+	// timing and reorg burial ONLY. It does NOT change which block seeds the
 	// lottery (that is always endBlock + SeedOffset). Safe to differ between
 	// operators. 5 ≈ 1 min on a 12s/block chain.
 	DefaultConfirmationDepth uint64 = 5
@@ -70,7 +70,7 @@ type EthClient interface {
 	FilterLogs(ctx context.Context, query ethereum.FilterQuery) ([]types.Log, error)
 	SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error)
 	// SubscribeNewHead delivers new block headers as the chain advances.
-	// On HTTP-only endpoints this typically returns an error — callers
+	// On HTTP-only endpoints this typically returns an error, so callers
 	// should fall back to polling BlockNumber.
 	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
 }
@@ -175,7 +175,7 @@ type ConnectionProps struct {
 	// re-querying it every epoch is wasteful. Nil = first use will create it.
 	DeclinesCache map[common.Address]bool
 
-	// ConfirmationDepth — how many blocks past the SEED block (endBlock +
+	// ConfirmationDepth is how many blocks past the SEED block (endBlock +
 	// SeedOffset) the node waits before submitting its vote, so the seed
 	// block is buried under enough confirmations to have settled. Controls
 	// submission timing / reorg burial ONLY; it does NOT change which block
@@ -183,8 +183,8 @@ type ConnectionProps struct {
 	ConfirmationDepth uint64
 
 	// cachedGasPrice memoizes SuggestGasPrice with a short TTL (60s). Gas
-	// price is cosmetic / a tx default only — never gates consensus or a
-	// transaction's success — so a stale read is harmless. Concurrent-safe
+	// price is a tx default only. It never gates consensus or a transaction's
+	// success, so a stale read is harmless. Concurrent-safe
 	// (sync.Mutex inside cachedValue). Do not read or write directly.
 	// Contract state that DOES gate a tx or the seed is intentionally never
 	// cached here; see state_cache.go.

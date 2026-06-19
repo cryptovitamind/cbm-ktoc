@@ -7,9 +7,9 @@ package ktfunc
 // read of any of them makes the node act on an already-rewarded epoch (the
 // tx then reverts) or shifts endBlock so two nodes seed the lottery from
 // different blocks. Those are always read fresh from the contract. The
-// gas-price suggestion is the only value cached here — it is cosmetic / a tx
-// default and never gates consensus or a transaction's success, so a stale
-// read is harmless and saves an RPC call per loop iteration.
+// gas-price suggestion is the only value cached here. It is a tx default and
+// never gates consensus or a transaction's success, so a stale read is
+// harmless and saves an RPC call per loop iteration.
 
 import (
 	"context"

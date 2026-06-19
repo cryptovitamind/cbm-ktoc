@@ -4,8 +4,8 @@ package ktfunc
 // wedge an epoch if operators on mismatched builds cast divergent votes before
 // the deterministic-seed fix: the already-cast votes are frozen for that epoch
 // slot and the contract has no skip/abandon function. These let an operator
-// deliberately converge a stuck epoch — undo their vote and/or force a vote for
-// an agreed address — using the contract's own resetVote/vote functions.
+// deliberately converge a stuck epoch (undo their vote and/or force a vote for
+// an agreed address) using the contract's own resetVote/vote functions.
 
 import (
 	"context"
@@ -22,9 +22,9 @@ import (
 const manualVoteData = "manual-override"
 
 // VoteForAddress casts a vote for a specific address in the current epoch,
-// bypassing the lottery — for deliberately converging a stuck epoch on an
-// agreed winner. The contract still enforces its rules (epoch complete, caller
-// is an OC, target not declined, caller hasn't already voted this epoch — use
+// bypassing the lottery to deliberately converge a stuck epoch on an agreed
+// winner. The contract still enforces its rules: epoch complete, caller is an
+// OC, target not declined, and caller hasn't already voted this epoch (use
 // ResetLotteryVote first if they have). After voting it reports where consensus
 // now stands for that candidate.
 func VoteForAddress(cProps *ConnectionProps, recipient common.Address) error {
@@ -51,7 +51,7 @@ func VoteForAddress(cProps *ConnectionProps, recipient common.Address) error {
 	}
 	log.Printf("Vote recorded for %s at epoch %d: %d/%d votes", recipient.Hex(), startBlock.Uint64(), count, required)
 	if count >= required {
-		log.Printf("Consensus reached for %s — it can now be rewarded (the running node will on its next cycle).", recipient.Hex())
+		log.Printf("Consensus reached for %s. It can now be rewarded (the running node will on its next cycle).", recipient.Hex())
 	} else {
 		log.Printf("Consensus not yet reached; %d more matching vote(s) needed.", required-count)
 	}
@@ -60,8 +60,8 @@ func VoteForAddress(cProps *ConnectionProps, recipient common.Address) error {
 
 // ResetLotteryVote undoes this node's vote for the current epoch so it can
 // re-cast (e.g. to converge a stuck epoch on an agreed winner). recipient must
-// be the address this node previously voted for — the contract decrements that
-// candidate's tally. The contract requires the caller to have an active vote
+// be the address this node previously voted for, since the contract decrements
+// that candidate's tally. The contract requires the caller to have an active vote
 // this epoch and the candidate to currently hold at least one vote.
 func ResetLotteryVote(cProps *ConnectionProps, recipient common.Address) error {
 	log.Printf("Resetting this node's vote for %s in the current epoch", recipient.Hex())

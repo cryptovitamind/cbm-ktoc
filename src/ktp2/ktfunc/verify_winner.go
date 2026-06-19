@@ -142,8 +142,8 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 
 	// Iterate to find the Voted event that triggered this Rwd. Voted events
 	// are returned in ascending block order, so the *last* match for the
-	// winner address with BlockNumber ≤ lastRwdBlock is the most recent vote
-	// preceding the reward — i.e., from the same epoch. If the same wallet
+	// winner address with BlockNumber <= lastRwdBlock is the most recent vote
+	// preceding the reward, from the same epoch. If the same wallet
 	// won earlier epochs in the search range, those earlier Voted events get
 	// overwritten and we end up with the correct (latest) one.
 	var votedEpochStart *big.Int
