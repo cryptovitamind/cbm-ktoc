@@ -153,6 +153,7 @@ type ConnectionProps struct {
 	ChainID        *big.Int             // Blockchain chain ID
 	Client         EthClient            // Ethereum client connection
 	Backend        bind.ContractBackend // Contract backend for KT contract
+	RPCCounter     *CountingClient      // Optional: tallies RPC calls by method for logging
 	MyPubKey       common.Address       // User's public address
 	MyPrivateKey   *ecdsa.PrivateKey    // User's private key (for testing only)
 	Addresses      *Addresses           // Contract and wallet addresses

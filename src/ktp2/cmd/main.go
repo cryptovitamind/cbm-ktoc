@@ -762,8 +762,13 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 	if err != nil {
 		log.Fatalf("Failed to connect to Ethereum node: %v", err)
 	}
-	cProps.Client = client
-	cProps.Backend = client
+	// Wrap the client so every JSON-RPC call is counted by method. Both the
+	// direct client and the contract backend point at the counter, so
+	// eth_getLogs / eth_call (the bulk of provider usage) are captured too.
+	counter := ktfunc.NewCountingClient(client)
+	cProps.Client = counter
+	cProps.Backend = counter
+	cProps.RPCCounter = counter
 	log.Println("Connected to Ethereum node successfully")
 
 	// Set public key.
@@ -837,11 +842,22 @@ func getKtInstance(client bind.ContractBackend, ktAddr common.Address) (ktfunc.K
 func KeepRunning(cProps *ktfunc.ConnectionProps) {
 	consecutiveErrors := 0
 	for {
+		if cProps.RPCCounter != nil {
+			cProps.RPCCounter.Reset()
+		}
+
 		if err := runOnce(cProps); err != nil {
 			consecutiveErrors++
 			log.Printf("Error in VoteAndReward (consecutive failures: %d): %v", consecutiveErrors, err)
 		} else {
 			consecutiveErrors = 0
+		}
+
+		// Report this iteration's provider usage so operators can see their
+		// Alchemy/Infura call profile and confirm the cache is keeping
+		// eth_getLogs / eth_call low.
+		if cProps.RPCCounter != nil {
+			cProps.RPCCounter.LogSummary("RPC this cycle")
 		}
 
 		// Back off exponentially while failing so a broken RPC endpoint or a
