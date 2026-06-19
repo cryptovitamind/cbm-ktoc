@@ -154,7 +154,7 @@ func loadMasterProperties() ktfunc.Addresses {
 // bannerVersion is the single source of truth for the build's identity. It is
 // rendered in the startup banner and recorded in --zipLogs bundles, so the
 // version an operator is running is always visible to them and to us.
-const bannerVersion = "v0.4.5-beta"
+const bannerVersion = "v0.4.6-beta"
 
 // runZipLogs bundles recent log files into a zip in the current directory and
 // prints its path, so an operator can attach it to a bug report. The metadata
