@@ -74,7 +74,7 @@ func ResetLotteryVote(cProps *ConnectionProps, recipient common.Address) error {
 		return fmt.Errorf("failed to reset vote for %s: %w", recipient.Hex(), err)
 	}
 	log.Printf("Reset-vote transaction sent: %s", tx.Hash().Hex())
-	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for reset-vote transaction to be mined: %w", err)
 	}

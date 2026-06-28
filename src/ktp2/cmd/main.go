@@ -78,6 +78,7 @@ type Flags struct {
 	waitDuration          time.Duration
 	verifyLastWinner      bool
 	confirmationDepth     uint64
+	txMineTimeout         time.Duration
 	logDir                string
 	zipLogs               bool
 	showVotes             bool
@@ -154,7 +155,7 @@ func loadMasterProperties() ktfunc.Addresses {
 // bannerVersion is the single source of truth for the build's identity. It is
 // rendered in the startup banner and recorded in --zipLogs bundles, so the
 // version an operator is running is always visible to them and to us.
-const bannerVersion = "v0.4.7-beta"
+const bannerVersion = "v0.4.8-beta"
 
 // runZipLogs bundles recent log files into a zip in the current directory and
 // prints its path, so an operator can attach it to a bug report. The metadata
@@ -247,6 +248,7 @@ func parseFlags() Flags {
 
 	verifyLastWinner := flag.Bool("verifyLastWinner", false, "Verify that the last rewarded winner was correctly and fairly selected by replaying the winner calculation.")
 	confirmationDepth := flag.Uint64("confirmationDepth", 0, fmt.Sprintf("Blocks to wait after the seed block before submitting a vote, for reorg safety (0 = default %d). This does NOT change which block seeds the lottery (always a fixed offset past epochEnd), so it is safe for operators to set differently. Larger = more reorg-resistant, more voting latency. Can also be set via the CONFIRMATION_DEPTH env var.", ktfunc.DefaultConfirmationDepth))
+	txMineTimeout := flag.Duration("txMineTimeout", ktfunc.DefaultTxMineTimeout, fmt.Sprintf("How long to wait for a submitted transaction to be mined before giving up and retrying on the next cycle (ex: 2m, 10m). Prevents the node from hanging forever on a tx that was dropped or stuck in the mempool. Default %s. Can also be set via the TX_MINE_TIMEOUT env var.", ktfunc.DefaultTxMineTimeout))
 	logDir := flag.String("logDir", "logs", "Directory to write log files to. Logs are mirrored from stdout into a rotating file here.")
 	zipLogs := flag.Bool("zipLogs", false, "Bundle recent log files into a zip in the current directory (for sending a bug report), then exit.")
 	showVotes := flag.Bool("showVotes", false, "Print the current epoch's reward votes: per-candidate tallies and which OC voted for which address.")
@@ -298,6 +300,7 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -zipLogs            %s\n", "Bundle recent log files into a zip in the current directory for a bug report, then exit.")
 		fmt.Fprintf(os.Stderr, "  -logDir <dir>       %s\n", "Directory for log files (default: logs).")
 		fmt.Fprintf(os.Stderr, "  -confirmationDepth <n> %s\n", "Blocks to wait after the seed block before voting, for reorg safety (does not change the winner).")
+		fmt.Fprintf(os.Stderr, "  -txMineTimeout <duration> %s\n", "How long to wait for a tx to mine before giving up and retrying (e.g., 2m, 10m). Stops the node hanging on a dropped tx.")
 		PrintOCUsage()
 
 		fmt.Fprintf(os.Stderr, "\n🛠️ Testing Commands (Local Dev Use Only):\n")
@@ -355,6 +358,7 @@ func parseFlags() Flags {
 		printStakeEvents:      *printStakeEvents,
 		verifyLastWinner:      *verifyLastWinner,
 		confirmationDepth:     *confirmationDepth,
+		txMineTimeout:         *txMineTimeout,
 		logDir:                *logDir,
 		zipLogs:               *zipLogs,
 		showVotes:             *showVotes,
@@ -743,6 +747,23 @@ func setupConnectionProps(mstProps *ktfunc.Addresses, flags Flags) *ktfunc.Conne
 		}
 	default:
 		cProps.ConfirmationDepth = ktfunc.DefaultConfirmationDepth
+	}
+
+	// Resolve tx-mine timeout: CLI flag (if changed from default) > TX_MINE_TIMEOUT env > default.
+	switch {
+	case flags.txMineTimeout != ktfunc.DefaultTxMineTimeout && flags.txMineTimeout > 0:
+		cProps.TxMineTimeout = flags.txMineTimeout
+		log.Infof("Transaction mine timeout set via flag: %v", cProps.TxMineTimeout)
+	case os.Getenv("TX_MINE_TIMEOUT") != "":
+		if v, err := time.ParseDuration(os.Getenv("TX_MINE_TIMEOUT")); err == nil && v > 0 {
+			cProps.TxMineTimeout = v
+			log.Infof("Transaction mine timeout set via env: %v", cProps.TxMineTimeout)
+		} else {
+			cProps.TxMineTimeout = ktfunc.DefaultTxMineTimeout
+			log.Warnf("Invalid TX_MINE_TIMEOUT env value %q; using default %v", os.Getenv("TX_MINE_TIMEOUT"), cProps.TxMineTimeout)
+		}
+	default:
+		cProps.TxMineTimeout = ktfunc.DefaultTxMineTimeout
 	}
 
 	// Set QueryDelay from environment variable or default to 100ms

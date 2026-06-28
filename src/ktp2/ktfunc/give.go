@@ -1,7 +1,6 @@
 package ktfunc
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
@@ -59,7 +58,7 @@ func Give(cProps *ConnectionProps, privateKey *ecdsa.PrivateKey, amount *big.Int
 	log.Infof("Transaction sent: %s", tx.Hash().Hex())
 
 	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		log.Errorf("Failed to mine transaction: %v", err)
 		return fmt.Errorf("failed to mine transaction: %w", err)

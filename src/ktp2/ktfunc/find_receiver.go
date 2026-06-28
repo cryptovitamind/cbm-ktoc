@@ -626,8 +626,9 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address, totalMi
 
 	log.Printf("Reward transaction sent: %s", tx.Hash().Hex())
 
-	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	// Wait for the transaction to be mined, bounded by TxMineTimeout so a tx
+	// that never lands returns an error here instead of hanging the run loop.
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for reward transaction to be mined: %v", err)
 	}
@@ -837,8 +838,9 @@ func vote(cProps *ConnectionProps, recipient common.Address, data string) error 
 
 	log.Debugf("Vote transaction sent: %s, %s", tx.Hash().Hex(), data)
 
-	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	// Wait for the transaction to be mined, bounded by TxMineTimeout so a tx
+	// that never lands returns an error here instead of hanging the run loop.
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for vote transaction to be mined: %v", err)
 	}

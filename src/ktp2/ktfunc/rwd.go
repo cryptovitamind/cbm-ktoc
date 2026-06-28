@@ -286,7 +286,7 @@ func WithdrawOCFees(cProps *ConnectionProps, blocks string) error {
 	}
 	log.Printf("Withdraw transaction sent: %s", tx.Hash().Hex())
 	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for withdraw transaction to be mined: %v", err)
 	}
@@ -566,7 +566,7 @@ func SetOCFee(cProps *ConnectionProps, fee uint16) error {
 	log.Printf("SetOCFee transaction sent: %s", tx.Hash().Hex())
 
 	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for setOCFee transaction to be mined: %v", err)
 	}

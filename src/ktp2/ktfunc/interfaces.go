@@ -57,6 +57,16 @@ var TimeToWaitForBlocks time.Duration = 5 * time.Second
 // block-polling interval). One minute keeps idle RPC volume low.
 var DefaultWaitDuration time.Duration = 60 * time.Second
 
+// DefaultTxMineTimeout bounds how long the node waits for a submitted
+// transaction to be mined before giving up. bind.WaitMined polls for a receipt
+// and, given an uncancellable context, blocks forever when the tx is dropped
+// from the mempool, underpriced, or stuck behind a nonce gap. A node parked
+// there stops voting and rewarding until an operator restarts it. Bounding the
+// wait lets the caller return an error so the run loop re-enters and re-submits
+// with a fresh nonce. Five minutes is ~25 blocks on a 12s/block chain, far more
+// than a properly priced tx needs, while still freeing a stuck node promptly.
+var DefaultTxMineTimeout time.Duration = 5 * time.Minute
+
 type EthClient interface {
 	CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error)
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
@@ -150,22 +160,26 @@ type Ktv2Interface interface {
 
 // ConnectionProps holds Ethereum connection properties and contract instances.
 type ConnectionProps struct {
-	ChainID        *big.Int             // Blockchain chain ID
-	Client         EthClient            // Ethereum client connection
-	Backend        bind.ContractBackend // Contract backend for KT contract
-	RPCCounter     *CountingClient      // Optional: tallies RPC calls by method for logging
-	MyPubKey       common.Address       // User's public address
-	MyPrivateKey   *ecdsa.PrivateKey    // User's private key (for testing only)
-	Addresses      *Addresses           // Contract and wallet addresses
-	KtAddr         common.Address       // KT contract address
-	KtBlock        *big.Int             // Start block number for KT contract
-	Kt             Ktv2Interface        // KT contract instance
-	GasLimit       uint64               // Gas limit for transactions
-	BlocksToWait   uint64               // Number of blocks to wait for transactions to confirm
-	QueryDelay     time.Duration        // Delay between API queries in milliseconds to prevent rate limiting
-	V2Uniswap      bool                 // If true, use Uniswap V2, else V1.
-	ChunkSize      int                  // Size of chunks for processing large data sets
-	WaitDuration   time.Duration        // Duration to wait between operations
+	ChainID      *big.Int             // Blockchain chain ID
+	Client       EthClient            // Ethereum client connection
+	Backend      bind.ContractBackend // Contract backend for KT contract
+	RPCCounter   *CountingClient      // Optional: tallies RPC calls by method for logging
+	MyPubKey     common.Address       // User's public address
+	MyPrivateKey *ecdsa.PrivateKey    // User's private key (for testing only)
+	Addresses    *Addresses           // Contract and wallet addresses
+	KtAddr       common.Address       // KT contract address
+	KtBlock      *big.Int             // Start block number for KT contract
+	Kt           Ktv2Interface        // KT contract instance
+	GasLimit     uint64               // Gas limit for transactions
+	BlocksToWait uint64               // Number of blocks to wait for transactions to confirm
+	QueryDelay   time.Duration        // Delay between API queries in milliseconds to prevent rate limiting
+	// TxMineTimeout bounds how long a transaction wait blocks before the node
+	// gives up and returns an error (so the run loop retries instead of
+	// hanging). Zero means use DefaultTxMineTimeout. See waitForTxMined.
+	TxMineTimeout time.Duration
+	V2Uniswap     bool          // If true, use Uniswap V2, else V1.
+	ChunkSize     int           // Size of chunks for processing large data sets
+	WaitDuration  time.Duration // Duration to wait between operations
 	// CacheDir is the directory for the on-disk event/fees caches. Empty means
 	// the default "cache". Set a distinct dir per node when running several
 	// operator instances on one machine so their bbolt caches don't collide.

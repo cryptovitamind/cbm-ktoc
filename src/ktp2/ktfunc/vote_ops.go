@@ -2,6 +2,7 @@ package ktfunc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ktp2/src/abis/ktv2"
 	"math/big"
@@ -15,6 +16,29 @@ import (
 var newTransactor = NewTransactor
 var waitForBlocks = WaitForBlocks
 var waitMined = bind.WaitMined
+
+// waitForTxMined waits for tx to be mined, but only up to TxMineTimeout. Plain
+// bind.WaitMined with an uncancellable context polls forever when a tx never
+// produces a receipt (dropped from the mempool, underpriced, or stuck behind a
+// nonce gap), which parks the run loop until an operator restarts the node. The
+// bounded context turns that silent hang into an error the caller can retry on.
+func waitForTxMined(cProps *ConnectionProps, tx *types.Transaction) (*types.Receipt, error) {
+	timeout := cProps.TxMineTimeout
+	if timeout <= 0 {
+		timeout = DefaultTxMineTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	receipt, err := waitMined(ctx, cProps.Client, tx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("transaction %s was not mined within %s; it was likely dropped or stuck in the mempool. Retrying on the next cycle", tx.Hash().Hex(), timeout)
+		}
+		return nil, err
+	}
+	return receipt, nil
+}
 
 // ValidateAddress parses and validates an Ethereum address string.
 // Returns the address and nil error if valid and non-zero; otherwise, an error.
@@ -46,7 +70,7 @@ func VoteToRemove(cProps *ConnectionProps, targetAddr common.Address, data strin
 
 	log.Printf("Vote to remove transaction sent: %s", tx.Hash().Hex())
 
-	receipt, err := waitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for vote to remove transaction to be mined: %w", err)
 	}
@@ -136,7 +160,7 @@ func VoteToAdd(cProps *ConnectionProps, targetAddr common.Address, data string) 
 
 	log.Printf("Vote to add transaction sent: %s", tx.Hash().Hex())
 
-	receipt, err := waitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for vote to add transaction to be mined: %w", err)
 	}
@@ -187,7 +211,7 @@ func ResetVoteToAdd(cProps *ConnectionProps, targetAddr common.Address) error {
 
 	log.Printf("Reset vote to add transaction sent: %s", tx.Hash().Hex())
 
-	receipt, err := waitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for reset vote to add transaction to be mined: %w", err)
 	}
@@ -238,7 +262,7 @@ func ResetVoteToRemove(cProps *ConnectionProps, targetAddr common.Address) error
 
 	log.Printf("Reset vote to remove transaction sent: %s", tx.Hash().Hex())
 
-	receipt, err := waitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for reset vote to remove transaction to be mined: %w", err)
 	}

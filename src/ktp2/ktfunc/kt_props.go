@@ -83,7 +83,7 @@ func AdjustEpochDuration(cProps *ConnectionProps, newEpochDuration *int64) (comm
 	log.Infof("Transaction sent: %s", tx.Hash().Hex())
 
 	// Wait for transaction confirmation
-	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		log.Errorf("Transaction mining failed: %v", err)
 		return common.Address{}, fmt.Errorf("failed to wait for transaction: %w", err)
@@ -275,7 +275,7 @@ func CreateKtFromFact(cProps *ConnectionProps) (common.Address, error) {
 	log.Infof("Transaction submitted: %s (Nonce: %d)", tx.Hash().Hex(), tx.Nonce())
 
 	// Wait for the transaction to be mined and get the receipt
-	receipt, err := bind.WaitMined(context.Background(), cProps.Client, tx)
+	receipt, err := waitForTxMined(cProps, tx)
 	if err != nil {
 		log.Errorf("Failed to confirm transaction mining: %v (Tx Hash: %s)", err, tx.Hash().Hex())
 		return common.Address{}, fmt.Errorf("failed to wait for transaction: %w", err)
