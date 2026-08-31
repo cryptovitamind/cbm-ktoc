@@ -1,9 +1,9 @@
 # KTOC
 
 KTOC runs an operator node for a KTv2 staking lottery on Ethereum. Each epoch it
-gathers stake events from the contract, weights every staker by the minimum
-balance they held across the epoch, and picks a winner using a fixed future
-block hash as the random seed. The seed block is the same for every operator, so
+gathers stake events from the contract, weights every staker by the square root
+of the minimum balance they held across the epoch, and picks a winner using a
+fixed future block hash as the random seed. The seed block is the same for every operator, so
 all nodes compute the same winner independently. The node then votes on-chain;
 once votes reach the consensus threshold, the winner receives the contract's ETH
 balance.

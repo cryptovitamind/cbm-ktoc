@@ -156,7 +156,7 @@ func loadMasterProperties() ktfunc.Addresses {
 // bannerVersion is the single source of truth for the build's identity. It is
 // rendered in the startup banner and recorded in --zipLogs bundles, so the
 // version an operator is running is always visible to them and to us.
-const bannerVersion = "v0.4.8-beta"
+const bannerVersion = "v0.5.0-beta"
 
 // runZipLogs bundles recent log files into a zip in the current directory and
 // prints its path, so an operator can attach it to a bug report. The metadata
@@ -270,7 +270,7 @@ func parseFlags() Flags {
 
 	// Custom usage message with guides
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "\n🌟 Welcome to KT v0.4 (beta) - CLI 🌟\n")
+		fmt.Fprintf(os.Stderr, "\n🌟 Welcome to KT %s - CLI 🌟\n", bannerVersion)
 		fmt.Fprintf(os.Stderr, "========================================================\n")
 		fmt.Fprintf(os.Stderr, "KT is an experimental blockchain tool. Use these flags to interact with KTv2 contracts.\n")
 		fmt.Fprintf(os.Stderr, "Set required environment variables (e.g., MY_PUBLIC_KEY, ETH_ENDPOINT) in a .env file.\n")

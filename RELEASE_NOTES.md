@@ -1,6 +1,51 @@
 # Release Notes
 
-## v0.4.8-beta
+## v0.5.0-beta
+
+### Changed: winner weighting is now square root
+
+The lottery now weights every staker by the square root of the minimum balance
+they held across the epoch. Before this release it used the logarithm, and the
+community noticed what the math confirms: log made the odds nearly flat. A
+wallet holding a billion times more tokens only won 1.5x more often, and
+splitting one stake across many wallets multiplied its total odds by hundreds.
+
+Square root keeps a real edge for larger stakes without handing everything to
+the largest one. A staker with 4x the tokens now gets 2x the weight. A billion
+times the tokens gets about 31,623x the weight, not 1.5x (log) and not a
+billion (linear). Splitting a stake across N wallets still helps, but only by
+sqrt(N) instead of the runaway gain log allowed.
+
+The new weighting also computes probabilities with 128-bit arithmetic in a
+fixed order, so every operator derives bit-identical odds from the same chain
+state. Stakes too close together for the old floating-point math to tell apart
+now weigh in correctly.
+
+### Upgrade notes: coordinate this one
+
+**Every operator must upgrade before the next epoch ends.** A node on this
+release and a node on an older release will pick different winners from the
+same chain state and vote against each other. Funds stay safe either way,
+because a reward needs the consensus threshold, but a split fleet can leave an
+epoch without a rewarded winner until enough nodes agree. If that happens,
+upgrade the stragglers, then use `-showVotes` to see the tallies and `-voteFor`
+to converge on a winner.
+
+### New: pick the curve when verifying old epochs
+
+`-verifyLastWinner` replays with square-root weighting by default, which means
+it will report a mismatch for epochs rewarded before this release. That
+mismatch is expected: those winners were selected under log. To check one of
+those epochs, re-run with the old curve:
+
+- Flag: `-verifyWeighting log`
+- Env var: `VERIFY_WEIGHTING=log`
+
+The flag wins over the env var. This setting only affects the verification
+replay. Live voting has no weighting switch, deliberately, so no operator can
+run a different curve from the rest of the fleet.
+
+
 
 ### Fixed: node could hang after "Winner selected"
 
