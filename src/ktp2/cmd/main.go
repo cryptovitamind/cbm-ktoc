@@ -77,6 +77,7 @@ type Flags struct {
 	currentBlock          bool
 	waitDuration          time.Duration
 	verifyLastWinner      bool
+	verifyWeighting       string
 	confirmationDepth     uint64
 	txMineTimeout         time.Duration
 	logDir                string
@@ -247,6 +248,7 @@ func parseFlags() Flags {
 	printOCVoteEvents := flag.String("printOCVoteEvents", "", "Print all OC vote events between <fromBlock>:<toBlock>")
 
 	verifyLastWinner := flag.Bool("verifyLastWinner", false, "Verify that the last rewarded winner was correctly and fairly selected by replaying the winner calculation.")
+	verifyWeighting := flag.String(ktfunc.VerifyWeightingFlagName, string(ktfunc.DefaultVerifyWeighting), fmt.Sprintf("Weighting curve for the -verifyLastWinner replay: %q (current selection) or %q (epochs rewarded by builds older than v0.5.0-beta). Has no effect on live voting. Can also be set via the %s env var.", ktfunc.SchemeSqrt, ktfunc.SchemeLog, ktfunc.VerifyWeightingEnvVar))
 	confirmationDepth := flag.Uint64("confirmationDepth", 0, fmt.Sprintf("Blocks to wait after the seed block before submitting a vote, for reorg safety (0 = default %d). This does NOT change which block seeds the lottery (always a fixed offset past epochEnd), so it is safe for operators to set differently. Larger = more reorg-resistant, more voting latency. Can also be set via the CONFIRMATION_DEPTH env var.", ktfunc.DefaultConfirmationDepth))
 	txMineTimeout := flag.Duration("txMineTimeout", ktfunc.DefaultTxMineTimeout, fmt.Sprintf("How long to wait for a submitted transaction to be mined before giving up and retrying on the next cycle (ex: 2m, 10m). Prevents the node from hanging forever on a tx that was dropped or stuck in the mempool. Default %s. Can also be set via the TX_MINE_TIMEOUT env var.", ktfunc.DefaultTxMineTimeout))
 	logDir := flag.String("logDir", "logs", "Directory to write log files to. Logs are mirrored from stdout into a rotating file here.")
@@ -294,6 +296,7 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -setOCFee <n>       %s\n", "Set the OC fee to the specified uint16 value. Multiply by ten. For example, use 20 for 2% fee.")
 		fmt.Fprintf(os.Stderr, "  -withdrawFees       %s\n", "Withdraw owed fees from kt.")
 		fmt.Fprintf(os.Stderr, "  -verifyLastWinner   %s\n", "Verify the last rewarded winner was correctly and fairly selected.")
+		fmt.Fprintf(os.Stderr, "  -verifyWeighting <curve> %s\n", "Curve for the -verifyLastWinner replay: sqrt (current) or log (pre-v0.5.0-beta epochs). Never affects live voting.")
 		fmt.Fprintf(os.Stderr, "  -showVotes          %s\n", "Show the current epoch's reward votes: per-candidate tallies and which OC voted for which address.")
 		fmt.Fprintf(os.Stderr, "  -voteFor <address>  %s\n", "Manually cast a reward vote for an address this epoch (override the lottery). Use to converge a stuck epoch.")
 		fmt.Fprintf(os.Stderr, "  -resetLotteryVote <address> %s\n", "Undo this node's reward vote (the address you voted for) so you can re-vote this epoch.")
@@ -357,6 +360,7 @@ func parseFlags() Flags {
 		dataForOCVote:         *dataForOCVote,
 		printStakeEvents:      *printStakeEvents,
 		verifyLastWinner:      *verifyLastWinner,
+		verifyWeighting:       *verifyWeighting,
 		confirmationDepth:     *confirmationDepth,
 		txMineTimeout:         *txMineTimeout,
 		logDir:                *logDir,
@@ -519,7 +523,11 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 
 	if flags.verifyLastWinner {
 		LogOperationStart("Verifying last winner")
-		if err := ktfunc.VerifyLastWinner(cProps); err != nil {
+		scheme, err := ktfunc.ResolveVerifyWeighting(os.Getenv(ktfunc.VerifyWeightingEnvVar), flags.verifyWeighting)
+		if err != nil {
+			log.Fatalf("Cannot verify last winner: %v", err)
+		}
+		if err := ktfunc.VerifyLastWinner(cProps, scheme); err != nil {
 			log.Errorf("Failed to verify last winner: %v", err)
 		}
 	}

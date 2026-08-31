@@ -60,6 +60,7 @@ func TestVerifyWinnerCalculation_SingleStaker(t *testing.T) {
 		50,  // epochStart
 		110, // epochEnd
 		blockHash,
+		SchemeSqrt,
 	)
 
 	assert.NoError(t, err)
@@ -90,11 +91,12 @@ func TestVerifyWinnerCalculation_MultipleStakers(t *testing.T) {
 		50,
 		110,
 		blockHash,
+		SchemeSqrt,
 	)
 
 	assert.NoError(t, err)
-	// With randFloat=0.0 and linear probs, winner should be the first address in sorted order
-	// since 0.0 < any positive probability
+	// With randFloat=0.0 the winner is the first address in sorted order,
+	// since 0.0 < any positive cumulative probability (regardless of curve).
 	assert.NotEqual(t, common.Address{}, result.CalculatedWinner)
 	assert.True(t, result.Match)
 }
@@ -113,6 +115,7 @@ func TestVerifyWinnerCalculation_MatchesOnChainWinner(t *testing.T) {
 		50,
 		110,
 		common.Hash{}, // all zeros
+		SchemeSqrt,
 	)
 
 	assert.NoError(t, err)
@@ -132,15 +135,68 @@ func TestVerifyWinnerCalculation_EmptyStakes(t *testing.T) {
 		50,
 		110,
 		common.Hash{},
+		SchemeSqrt,
 	)
 
 	assert.NoError(t, err)
 	assert.Equal(t, common.Address{}, result.CalculatedWinner)
 }
 
-// (Phase 6a: removed TestVerifyWinnerCalculation_LinearVsLog. The linear
-//  mode was eliminated to stop different operators silently computing
-//  different winners. Log is the only mode.)
+// TestVerifyWinnerCalculation_SchemeSelectsDifferentWinners proves the scheme
+// parameter is honored, using inputs where the curves genuinely disagree.
+// Stakes: 100 wei vs 1e18 wei. Log share of the small staker is
+// log1p(100)/(log1p(100)+log1p(1e18)) ≈ 0.1002; sqrt share is
+// 10/(10+1e9) ≈ 1e-8. Hash 0x0C000...0 gives randFloat = 12/256 = 0.046875,
+// which lands inside the small staker's interval under log and far past it
+// under sqrt. The small staker's address sorts first, so its interval starts
+// at 0.
+func TestVerifyWinnerCalculation_SchemeSelectsDifferentWinners(t *testing.T) {
+	logrus.SetLevel(logrus.FatalLevel)
+
+	small := common.HexToAddress("0x1000000000000000000000000000000000000001")
+	whale := common.HexToAddress("0xF00000000000000000000000000000000000000F")
+
+	stakeDataMap := map[common.Address]map[uint64]*UserStakeData{
+		small: {40: {StakeAmount: big.NewInt(100)}},
+		whale: {40: {StakeAmount: big.NewInt(1_000_000_000_000_000_000)}},
+	}
+
+	blockHash := common.Hash{0x0C}
+
+	clone := func() map[common.Address]map[uint64]*UserStakeData {
+		out := make(map[common.Address]map[uint64]*UserStakeData, len(stakeDataMap))
+		for addr, blocks := range stakeDataMap {
+			inner := make(map[uint64]*UserStakeData, len(blocks))
+			for blk, data := range blocks {
+				inner[blk] = &UserStakeData{StakeAmount: new(big.Int).Set(data.StakeAmount)}
+			}
+			out[addr] = inner
+		}
+		return out
+	}
+
+	logResult, err := VerifyWinnerCalculation(clone(), 50, 110, blockHash, SchemeLog)
+	assert.NoError(t, err)
+	assert.Equal(t, small, logResult.CalculatedWinner,
+		"log weighting gives the small staker ~10%%; randFloat 0.046875 must select it")
+
+	sqrtResult, err := VerifyWinnerCalculation(clone(), 50, 110, blockHash, SchemeSqrt)
+	assert.NoError(t, err)
+	assert.Equal(t, whale, sqrtResult.CalculatedWinner,
+		"sqrt weighting gives the small staker ~1e-8; randFloat 0.046875 must select the whale")
+}
+
+// TestVerifyWinnerCalculation_UnknownSchemeErrors: replaying with an invalid
+// curve must fail loudly, never silently fall back to a default.
+func TestVerifyWinnerCalculation_UnknownSchemeErrors(t *testing.T) {
+	logrus.SetLevel(logrus.FatalLevel)
+
+	stakerAddr := common.HexToAddress("0xabc123456789012345678901234567890123456")
+	stakeDataMap := buildSimpleStakeDataMap(stakerAddr, 40, 1000)
+
+	_, err := VerifyWinnerCalculation(stakeDataMap, 50, 110, common.Hash{}, WeightingScheme("banana"))
+	assert.Error(t, err)
+}
 
 // TestVerifyWinnerCalculation_StakesOutsideEpoch tests that stakes outside the epoch range
 // are handled correctly (pre-epoch stakes count, post-epoch events are excluded by endBlock).
@@ -164,6 +220,7 @@ func TestVerifyWinnerCalculation_StakesOutsideEpoch(t *testing.T) {
 		50,
 		110,
 		common.Hash{}, // randFloat=0
+		SchemeSqrt,
 	)
 
 	assert.NoError(t, err)
@@ -180,18 +237,18 @@ func TestVerifyWinnerCalculation_NilMap(t *testing.T) {
 		50,
 		110,
 		common.Hash{},
+		SchemeSqrt,
 	)
 
 	assert.Error(t, err)
 }
 
 // ============================================================================
-// Phase 5f — VerifyLastWinner direct tests.
+// VerifyLastWinner direct tests.
 //
 // VerifyLastWinner fetches the most recent on-chain Rwd event and the
 // matching Voted event, then replays the winner calculation to confirm
 // the on-chain winner matches what the algorithm would pick today.
-// Previously had zero direct tests.
 
 // vlwSetup builds a minimal ConnectionProps + mocks for VerifyLastWinner.
 // Pre-sets KtBlock so GetContractCreationBlock returns immediately.
@@ -221,7 +278,7 @@ func TestVerifyLastWinner_NoRwdInSearchRangeReturnsNil(t *testing.T) {
 	mockKt.On("EpochInterval", mock.Anything).Return(uint16(600), nil)
 	mockKt.On("FilterRwd", mock.Anything).Return(&mockRwdIter{events: nil}, nil)
 
-	err := VerifyLastWinner(cProps)
+	err := VerifyLastWinner(cProps, SchemeSqrt)
 	assert.NoError(t, err)
 }
 
@@ -248,7 +305,7 @@ func TestVerifyLastWinner_NoMatchingVotedReturnsError(t *testing.T) {
 	mockKt.On("FilterRwd", mock.Anything).Return(&mockRwdIter{events: rwdEvents}, nil)
 	mockKt.On("FilterVoted", mock.Anything).Return(&mockVotedIter{events: votedEvents}, nil)
 
-	err := VerifyLastWinner(cProps)
+	err := VerifyLastWinner(cProps, SchemeSqrt)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no matching Voted event")
 }
@@ -287,7 +344,7 @@ func TestVerifyLastWinner_ReplayMatchesOnChain(t *testing.T) {
 	}
 	defer func() { GatherStakesAndWithdraws = origGather }()
 
-	err := VerifyLastWinner(cProps)
+	err := VerifyLastWinner(cProps, SchemeSqrt)
 	assert.NoError(t, err)
 }
 
@@ -332,7 +389,7 @@ func TestVerifyLastWinner_ReplayMismatchReturnsNilButLogsWarning(t *testing.T) {
 	}
 	defer func() { GatherStakesAndWithdraws = origGather }()
 
-	err := VerifyLastWinner(cProps)
+	err := VerifyLastWinner(cProps, SchemeSqrt)
 	// VerifyLastWinner returns nil even on mismatch; the warning is logged.
 	// Pin: no error propagation.
 	assert.NoError(t, err)

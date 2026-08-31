@@ -48,15 +48,11 @@ func TestCalculateProbsForEachWallet_SingleAddress(t *testing.T) {
 	}
 
 	prob, _ := stakeDataMinsMap[addr].Prob.Float64()
-	expectedProb := 1.0 // 100 / 100
+	expectedProb := 1.0 // sole staker always has the whole probability mass
 	if prob != expectedProb {
 		t.Errorf("Expected probability %f, got %f", expectedProb, prob)
 	}
 }
-
-// (Phase 6a: removed linear-math TestCalculateProbsForEachWallet_MultipleAddresses;
-//  TestCalculateProbsForEachWallet_LogNormalized_MultipleAddresses below covers
-//  the equivalent path under the only remaining mode.)
 
 // Test with a zero stake amount
 func TestCalculateProbsForEachWallet_ZeroStake(t *testing.T) {
@@ -83,7 +79,8 @@ func TestCalculateProbsForEachWallet_ZeroStake(t *testing.T) {
 	}
 }
 
-// Test with totalMin = 0 (log normalization still works)
+// Test with totalMin = 0 (the weighting does not divide by totalMin, so a
+// zero total must not break normalization)
 func TestCalculateProbsForEachWallet_TotalMinZero(t *testing.T) {
 	addr := common.HexToAddress("0x1")
 	stakeDataMinsMap := map[common.Address]*UserStakeData{
@@ -97,131 +94,8 @@ func TestCalculateProbsForEachWallet_TotalMinZero(t *testing.T) {
 	}
 
 	prob, _ := stakeDataMinsMap[addr].Prob.Float64()
-	expectedProb := 1.0 // log(100) / log(100) = 1.0
+	expectedProb := 1.0 // sole staker always has the whole probability mass
 	if math.Abs(prob-expectedProb) > 1e-6 {
 		t.Errorf("Expected probability %f, got %f", expectedProb, prob)
-	}
-}
-
-// Test log-normalized probabilities with a single address
-func TestCalculateProbsForEachWallet_LogNormalized_SingleAddress(t *testing.T) {
-	addr := common.HexToAddress("0x1")
-	stakeDataMinsMap := map[common.Address]*UserStakeData{
-		addr: createUserStakeData1("100"),
-	}
-	totalMin := big.NewInt(100)
-
-	found := calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
-	if !found {
-		t.Errorf("Expected found=true, got false")
-	}
-
-	prob, _ := stakeDataMinsMap[addr].Prob.Float64()
-	expectedProb := 1.0 // log(100) / log(100) = 1.0
-	if math.Abs(prob-expectedProb) > 1e-6 {
-		t.Errorf("Expected probability %f, got %f", expectedProb, prob)
-	}
-}
-
-// Test log-normalized probabilities with multiple addresses
-func TestCalculateProbsForEachWallet_LogNormalized_MultipleAddresses(t *testing.T) {
-	addr1 := common.HexToAddress("0x1")
-	addr2 := common.HexToAddress("0x2")
-	addr3 := common.HexToAddress("0x3")
-	stakeDataMinsMap := map[common.Address]*UserStakeData{
-		addr1: createUserStakeData1("100"),
-		addr2: createUserStakeData1("200"),
-		addr3: createUserStakeData1("300"),
-	}
-	totalMin := big.NewInt(600)
-
-	found := calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
-	if !found {
-		t.Errorf("Expected found=true, got false")
-	}
-
-	// Calculate expected probabilities (log1p to match logNormalizeProbabilities,
-	// which uses log(1+stake) so a 1-wei stake doesn't collapse to 0).
-	log100 := math.Log1p(100)
-	log200 := math.Log1p(200)
-	log300 := math.Log1p(300)
-	sumLog := log100 + log200 + log300
-	expectedProb1 := log100 / sumLog
-	expectedProb2 := log200 / sumLog
-	expectedProb3 := log300 / sumLog
-
-	// Check probabilities with tolerance
-	prob1, _ := stakeDataMinsMap[addr1].Prob.Float64()
-	if math.Abs(prob1-expectedProb1) > 1e-6 {
-		t.Errorf("Expected probability %f for addr1, got %f", expectedProb1, prob1)
-	}
-	prob2, _ := stakeDataMinsMap[addr2].Prob.Float64()
-	if math.Abs(prob2-expectedProb2) > 1e-6 {
-		t.Errorf("Expected probability %f for addr2, got %f", expectedProb2, prob2)
-	}
-	prob3, _ := stakeDataMinsMap[addr3].Prob.Float64()
-	if math.Abs(prob3-expectedProb3) > 1e-6 {
-		t.Errorf("Expected probability %f for addr3, got %f", expectedProb3, prob3)
-	}
-}
-
-// Test log-normalized probabilities with a zero stake amount
-func TestCalculateProbsForEachWallet_LogNormalized_ZeroStake(t *testing.T) {
-	addr1 := common.HexToAddress("0x1")
-	addr2 := common.HexToAddress("0x2")
-	stakeDataMinsMap := map[common.Address]*UserStakeData{
-		addr1: createUserStakeData1("0"),
-		addr2: createUserStakeData1("100"),
-	}
-	totalMin := big.NewInt(100)
-
-	found := calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
-	if !found {
-		t.Errorf("Expected found=true, got false")
-	}
-
-	prob1, _ := stakeDataMinsMap[addr1].Prob.Float64()
-	if prob1 != 0.0 {
-		t.Errorf("Expected probability 0.0 for addr1, got %f", prob1)
-	}
-	prob2, _ := stakeDataMinsMap[addr2].Prob.Float64()
-	expectedProb2 := 1.0 // log(100) / log(100) = 1.0
-	if math.Abs(prob2-expectedProb2) > 1e-6 {
-		t.Errorf("Expected probability %f for addr2, got %f", expectedProb2, prob2)
-	}
-}
-
-// TestCalculateProbsForEachWallet_LogNormalized_TinyStakeNotExcluded pins the
-// fix for the log(1)=0 exclusion bug. A wallet with a 1-wei stake must end up
-// with a small but strictly positive probability, even when there is a whale.
-func TestCalculateProbsForEachWallet_LogNormalized_TinyStakeNotExcluded(t *testing.T) {
-	tiny := common.HexToAddress("0x1")
-	whale := common.HexToAddress("0x2")
-	stakeDataMinsMap := map[common.Address]*UserStakeData{
-		tiny:  createUserStakeData1("1"),                   // 1 wei
-		whale: createUserStakeData1("1000000000000000000"), // 1 ETH
-	}
-	// totalMin is not used by the log path, but populate it so the helper
-	// doesn't short-circuit on a zero total.
-	totalMin := new(big.Int)
-	totalMin.SetString("1000000000000000001", 10)
-
-	found := calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
-	if !found {
-		t.Fatalf("Expected found=true, got false")
-	}
-
-	tinyProb, _ := stakeDataMinsMap[tiny].Prob.Float64()
-	whaleProb, _ := stakeDataMinsMap[whale].Prob.Float64()
-
-	if tinyProb <= 0 {
-		t.Errorf("tiny-stake wallet was excluded (prob=%g); expected a small but positive share", tinyProb)
-	}
-	if whaleProb <= tinyProb {
-		t.Errorf("whale prob (%g) should still exceed tiny prob (%g) under log normalization", whaleProb, tinyProb)
-	}
-	// Combined probs should sum to ~1.
-	if total := tinyProb + whaleProb; math.Abs(total-1.0) > 1e-9 {
-		t.Errorf("probabilities should sum to 1, got %g", total)
 	}
 }

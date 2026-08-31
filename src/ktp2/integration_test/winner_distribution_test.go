@@ -1,20 +1,11 @@
 package integration_test
 
-// Phase 1 (TDD) — reproduces the fairness consequence of the
-// findMinOverBlockRange bug at the public API surface.
-//
-// We drive the full winner-selection pipeline through
-// ktfunc.VerifyWinnerCalculation, which internally runs
-// findMinOverBlockRange + calculateProbsForEachWallet +
-// defaultCalculateWinningWallet — i.e. the same code path
-// VoteAndReward uses to pick a winner.
-//
-// Today, a wallet that joins exactly at epochStart (or tops up mid-epoch)
-// is credited with its post-deposit stake as the epoch minimum. Under
-// linear probability normalization that hands the wallet ~all of the
-// probability mass.
-//
-// These tests will pass after the Phase 2 fix to findMinOverBlockRange.
+// Distribution tests for the winner-selection pipeline, driven through
+// ktfunc.VerifyWinnerCalculation — which runs findMinOverBlockRange +
+// probability normalization + defaultCalculateWinningWallet, the same code
+// path VoteAndReward uses to pick a winner. Each test samples many block
+// hashes to approximate win rates and asserts they land where the min-stake
+// semantics and the weighting curve say they should.
 
 import (
 	"encoding/binary"
@@ -38,16 +29,12 @@ func hashFromIndex(i int) common.Hash {
 	return h
 }
 
-// (Phase 6a: removed _Linear variant. Log is now the only mode.)
-
-func TestVoteAndReward_FreshMidEpochDepositorDoesNotAutoWin_Log(t *testing.T) {
-	// Same scenario as above but with log-normalized probabilities. The
-	// log dampens the imbalance, so the newcomer doesn't get *all* the
-	// probability — but they still pick up a share they shouldn't have
-	// (their true min is 0; they should be excluded).
-	//
-	// Production default is log normalization (linearProbs flag is off),
-	// so this version corresponds to the live-node configuration.
+func TestVoteAndReward_FreshMidEpochDepositorDoesNotAutoWin(t *testing.T) {
+	// A wallet that first deposits mid-epoch has a true epoch minimum of 0
+	// and must be excluded from the lottery entirely, no matter how large
+	// the deposit or which weighting curve is in effect. Nine modest
+	// baseline stakers plus one huge mid-epoch newcomer: the newcomer
+	// should win nothing.
 
 	stakeDataMap := make(map[common.Address]map[uint64]*ktfunc.UserStakeData)
 	for i := 1; i <= 9; i++ {
@@ -67,7 +54,7 @@ func TestVoteAndReward_FreshMidEpochDepositorDoesNotAutoWin_Log(t *testing.T) {
 	newcomerWins := 0
 	for i := 0; i < samples; i++ {
 		fresh := cloneStakeMap(stakeDataMap)
-		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i))
+		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i), ktfunc.SchemeSqrt)
 		if err != nil {
 			t.Fatalf("VerifyWinnerCalculation: %v", err)
 		}
@@ -77,12 +64,11 @@ func TestVoteAndReward_FreshMidEpochDepositorDoesNotAutoWin_Log(t *testing.T) {
 	}
 
 	// True semantics: newcomer is excluded → 0 wins.
-	// Bug under log: newcomer still gets a measurable share of the lottery.
 	// 10% gives plenty of headroom for noise; the newcomer should be at 0%.
 	maxAllowedWinPct := 10.0
 	winPct := 100.0 * float64(newcomerWins) / float64(samples)
 	if winPct > maxAllowedWinPct {
-		t.Errorf("FAIL (reproduces bug, log mode): newcomer who only staked mid-epoch won %d/%d (%.1f%%) of epochs; "+
+		t.Errorf("FAIL: newcomer who only staked mid-epoch won %d/%d (%.1f%%) of epochs; "+
 			"expected <%.0f%% because their true min stake during the epoch is 0",
 			newcomerWins, samples, winPct, maxAllowedWinPct)
 	}
@@ -112,7 +98,7 @@ func TestVoteAndReward_TopUpMidEpochDoesNotInflateWeight(t *testing.T) {
 	cWins := 0
 	for i := 0; i < samples; i++ {
 		fresh := cloneStakeMap(stakeDataMap)
-		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i))
+		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i), ktfunc.SchemeSqrt)
 		if err != nil {
 			t.Fatalf("VerifyWinnerCalculation: %v", err)
 		}
@@ -121,14 +107,55 @@ func TestVoteAndReward_TopUpMidEpochDoesNotInflateWeight(t *testing.T) {
 		}
 	}
 
-	// True semantics: A/B/C each have min=1000, so C should win ~33%.
-	// Bug today: C's min becomes 1,001,000 → ~99% under linear.
+	// True semantics: A/B/C each have min=1000 (the top-up never lowers the
+	// epoch minimum), so all three are equally weighted under any curve and
+	// C should win ~33%.
 	maxAllowedWinPct := 60.0
 	winPct := 100.0 * float64(cWins) / float64(samples)
 	if winPct > maxAllowedWinPct {
 		t.Errorf("FAIL (reproduces bug): mid-epoch top-up gave C %d/%d (%.1f%%) wins; "+
 			"expected ~33%% (well under %.0f%%) because C's true min is 1000, same as A and B",
 			cWins, samples, winPct, maxAllowedWinPct)
+	}
+}
+
+// TestWinnerDistribution_SqrtWeighting pins the live curve end-to-end: with
+// stakes of 1e18 and 4e18 carried through the whole epoch, sqrt weighting
+// gives the larger staker sqrt(4e18)/(sqrt(1e18)+sqrt(4e18)) = 2/3 of the
+// wins. The band [58%, 78%] is ~2.6σ around the 2/3 expectation for 200
+// samples and cleanly excludes log weighting, which would put the larger
+// staker at ~50.8%.
+func TestWinnerDistribution_SqrtWeighting(t *testing.T) {
+	small := common.HexToAddress("0x0000000000000000000000000000000000000001")
+	large := common.HexToAddress("0x0000000000000000000000000000000000000002")
+
+	oneToken := new(big.Int).SetUint64(1_000_000_000_000_000_000)
+	fourTokens := new(big.Int).Mul(oneToken, big.NewInt(4))
+
+	stakeDataMap := map[common.Address]map[uint64]*ktfunc.UserStakeData{
+		small: {50: {StakeAmount: oneToken}},
+		large: {50: {StakeAmount: fourTokens}},
+	}
+
+	const samples = 200
+	const epochStart, epochEnd = uint64(100), uint64(200)
+
+	largeWins := 0
+	for i := 0; i < samples; i++ {
+		fresh := cloneStakeMap(stakeDataMap)
+		result, err := ktfunc.VerifyWinnerCalculation(fresh, epochStart, epochEnd, hashFromIndex(i), ktfunc.SchemeSqrt)
+		if err != nil {
+			t.Fatalf("VerifyWinnerCalculation: %v", err)
+		}
+		if result.CalculatedWinner == large {
+			largeWins++
+		}
+	}
+
+	winPct := 100.0 * float64(largeWins) / float64(samples)
+	if winPct < 58.0 || winPct > 78.0 {
+		t.Errorf("sqrt weighting should give the 4x staker ~66.7%% of wins; got %d/%d (%.1f%%), outside [58%%, 78%%]",
+			largeWins, samples, winPct)
 	}
 }
 

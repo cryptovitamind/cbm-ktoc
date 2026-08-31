@@ -2,6 +2,7 @@ package ktfunc
 
 import (
 	"errors"
+	"math"
 	"math/big"
 	"testing"
 
@@ -294,6 +295,113 @@ func TestVoteAndReward_WithStakesAndReward(t *testing.T) {
 
 	mockClient.AssertExpectations(t)
 	mockKt.AssertExpectations(t)
+}
+
+// TestVoteAndReward_LiveSelectionUsesSqrtWeights proves the LIVE voting path
+// computes sqrt-normalized probabilities. It runs the real VoteAndReward
+// pipeline against three pre-epoch stakers (100/200/300 wei) and captures the
+// probabilities the pipeline hands to the winner draw. The sqrt and log shares
+// for these stakes differ by up to ~0.05, so the assertion discriminates the
+// curves.
+func TestVoteAndReward_LiveSelectionUsesSqrtWeights(t *testing.T) {
+	logrus.SetLevel(logrus.FatalLevel)
+
+	mockClient := &MockEthClient{}
+	mockKt := &MockKtv2{}
+	cProps := &ConnectionProps{
+		Client:            mockClient,
+		Kt:                mockKt,
+		KtAddr:            common.HexToAddress("0x1234567890123456789012345678901234567890"),
+		MyPubKey:          common.HexToAddress("0x742d35Cc6634C0532925a3b8D3fE0e9C6e776d3d"),
+		ChainID:           big.NewInt(1),
+		BlocksToWait:      0,
+		ChunkSize:         500,
+		ConfirmationDepth: 1,
+	}
+
+	privateKey, _ := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d4977e62bc6535e9a")
+	cProps.MyPrivateKey = privateKey
+
+	currentHeader := &types.Header{Number: big.NewInt(120)}
+	mockClient.On("HeaderByNumber", mock.Anything, (*big.Int)(nil)).Return(currentHeader, nil)
+
+	startBlock := big.NewInt(50)
+	endBlock := big.NewInt(110)
+	interval := uint16(60)
+	mockKt.On("StartBlock", mock.Anything).Return(startBlock, nil)
+	mockKt.On("EpochInterval", mock.Anything).Return(interval, nil)
+
+	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, endBlock).Return(big.NewInt(1000000000000000000), nil)
+	mockClient.On("CodeAt", mock.Anything, cProps.KtAddr, mock.Anything).Return([]byte{0x60, 0x80}, nil)
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(120), nil)
+
+	seedBlockNum := new(big.Int).SetUint64(endBlock.Uint64() + SeedOffset)
+	confirmBlockNum := new(big.Int).Add(seedBlockNum, big.NewInt(1))
+	seedHeader := &types.Header{Number: seedBlockNum}
+	mockClient.On("HeaderByNumber", mock.Anything, confirmBlockNum).Return(&types.Header{Number: confirmBlockNum}, nil)
+	mockClient.On("HeaderByNumber", mock.Anything, seedBlockNum).Return(seedHeader, nil)
+	mockClient.On("HeaderByNumber", mock.Anything, mock.Anything).Return(&types.Header{}, nil).Maybe()
+
+	// Three stakers, all pre-epoch (block 40) so their epoch minimums are
+	// exactly 100/200/300.
+	addrA := common.HexToAddress("0xA000000000000000000000000000000000000001")
+	addrB := common.HexToAddress("0xB000000000000000000000000000000000000002")
+	addrC := common.HexToAddress("0xC000000000000000000000000000000000000003")
+	stakedIter := &MockStakedIterator{events: []*ktv2.Ktv2Staked{
+		{Arg0: addrA, Arg1: big.NewInt(100), Raw: types.Log{BlockNumber: 40}},
+		{Arg0: addrB, Arg1: big.NewInt(200), Raw: types.Log{BlockNumber: 40}},
+		{Arg0: addrC, Arg1: big.NewInt(300), Raw: types.Log{BlockNumber: 40}},
+	}}
+	emptyWithdrewIter := &MockWithdrewIterator{events: []*ktv2.Ktv2Withdrew{}}
+	mockKt.On("FilterStaked", mock.Anything).Return(stakedIter, nil)
+	mockKt.On("FilterWithdrew", mock.Anything).Return(emptyWithdrewIter, nil)
+	mockKt.On("Declines", mock.Anything, addrA).Return(false, nil)
+	mockKt.On("Declines", mock.Anything, addrB).Return(false, nil)
+	mockKt.On("Declines", mock.Anything, addrC).Return(false, nil)
+
+	// Capture the probabilities the live pipeline computed, then return a
+	// fixed winner to keep the rest of the mock surface small.
+	captured := make(map[common.Address]float64)
+	origCalc := calcWinningWallet
+	SetCalculateWinningWallet(func(m map[common.Address]*UserStakeData, _ common.Hash) (common.Address, error) {
+		for addr, data := range m {
+			if data.Prob != nil {
+				p, _ := data.Prob.Float64()
+				captured[addr] = p
+			}
+		}
+		return addrA, nil
+	})
+	defer SetCalculateWinningWallet(origCalc)
+
+	voteData := seedHeader.Hash().Hex()
+	voteTx := types.NewTransaction(0, addrA, big.NewInt(0), 0, big.NewInt(0), []byte{})
+	mockKt.On("Vote", mock.Anything, addrA, voteData).Return(voteTx, nil)
+
+	// Not enough votes for a reward, so the reward branch stays out of scope.
+	mockKt.On("BlockRwd", mock.Anything, startBlock, addrA).Return(uint16(0), nil)
+	mockKt.On("ConsensusReq", mock.Anything).Return(uint16(3), nil)
+
+	successReceipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, BlockNumber: big.NewInt(112)}
+	mockClient.On("TransactionReceipt", mock.Anything, mock.Anything).Return(successReceipt, nil)
+
+	// Clear entire cache directory to ensure fresh query and mocks are used
+	_ = os.RemoveAll("cache")
+
+	err := VoteAndReward(cProps)
+	assert.NoError(t, err)
+
+	sqrtSum := math.Sqrt(100) + math.Sqrt(200) + math.Sqrt(300)
+	for addr, stake := range map[common.Address]float64{addrA: 100, addrB: 200, addrC: 300} {
+		got, ok := captured[addr]
+		if !ok {
+			t.Fatalf("no probability captured for %s", addr.Hex())
+		}
+		want := math.Sqrt(stake) / sqrtSum
+		if math.Abs(got-want) > 1e-6 {
+			t.Errorf("live path must sqrt-weight %s: expected %f, got %f", addr.Hex(), want, got)
+		}
+	}
 }
 
 // TestVoteAndReward_GetCurrentBlockError tests error when getting current block fails.

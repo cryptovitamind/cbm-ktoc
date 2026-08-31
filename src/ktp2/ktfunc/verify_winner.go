@@ -20,13 +20,16 @@ type VerificationResult struct {
 // provided stake data, epoch range, and block hash. Returns the calculated
 // winner so it can be compared against the on-chain result.
 //
-// The winner is always computed with log-normalized stake weights. There is
-// deliberately no probability-mode switch: a per-operator toggle would let
-// two nodes compute different winners from the same inputs and break consensus.
+// The scheme picks the weighting curve for the REPLAY only: sqrt reproduces
+// current selection; log reproduces epochs rewarded by builds that selected
+// winners with log weights. Live voting has no such switch — it is hard-wired
+// to sqrt (calculateProbsForEachWallet), because a per-operator toggle on the
+// live path would let two nodes compute different winners and break consensus.
 func VerifyWinnerCalculation(
 	stakeDataMap map[common.Address]map[uint64]*UserStakeData,
 	epochStart, epochEnd uint64,
 	blockHash common.Hash,
+	scheme WeightingScheme,
 ) (*VerificationResult, error) {
 	if stakeDataMap == nil {
 		return nil, fmt.Errorf("stake data map is nil")
@@ -46,8 +49,10 @@ func VerifyWinnerCalculation(
 		}, nil
 	}
 
-	// Calculate probabilities for each wallet
-	calculateProbsForEachWallet(stakeDataMinsMap, totalMin)
+	// Calculate probabilities for each wallet with the requested curve
+	if err := normalizeProbabilities(stakeDataMinsMap, scheme); err != nil {
+		return nil, fmt.Errorf("failed to normalize probabilities: %w", err)
+	}
 
 	// Select winner using the same deterministic algorithm
 	winner, err := defaultCalculateWinningWallet(stakeDataMinsMap, blockHash)
@@ -62,9 +67,11 @@ func VerifyWinnerCalculation(
 }
 
 // VerifyLastWinner fetches on-chain Rwd and Voted events, then replays the winner
-// calculation to verify the last rewarded winner was correctly selected.
-func VerifyLastWinner(cProps *ConnectionProps) error {
+// calculation to verify the last rewarded winner was correctly selected. The
+// scheme picks the weighting curve for the replay (see VerifyWinnerCalculation).
+func VerifyLastWinner(cProps *ConnectionProps, scheme WeightingScheme) error {
 	LogOperationStart("Verifying last winner")
+	log.Infof("Replaying with %s weighting", scheme)
 
 	currentBlock, err := cProps.Client.BlockNumber(context.Background())
 	if err != nil {
@@ -196,6 +203,7 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 		votedEpochStart.Uint64(),
 		endBlock.Uint64(),
 		blockHash,
+		scheme,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to verify winner calculation: %w", err)
@@ -212,6 +220,10 @@ func VerifyLastWinner(cProps *ConnectionProps) error {
 	} else {
 		log.Warn("  MISMATCH: The calculated winner does not match the on-chain winner!")
 		log.Warn("  Possible causes:")
+		if scheme == SchemeSqrt {
+			log.Warnf("    - the epoch was rewarded by a build older than %s, which selected", sqrtWeightingSince)
+			log.Warnf("      winners with log weighting; re-run with -%s=%s;", VerifyWeightingFlagName, SchemeLog)
+		}
 		log.Warn("    - the epoch was rewarded before the min-stake or withdraw-erasure")
 		log.Warn("      fix shipped, so the on-chain winner was selected by a pre-fix algorithm;")
 		log.Warn("    - the voting node was running with a different code version (check banner);")
