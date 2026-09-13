@@ -152,6 +152,10 @@ type Ktv2Interface interface {
 	FilterVoted(opts *bind.FilterOpts) (VotedIterator, error)
 
 	OcRwdrs(opts *bind.CallOpts, address common.Address) (bool, error)
+	// LastStartBlock is the epoch key an OC last transacted under; the
+	// contract's migrateFees folds ocFees[oc][lastStartBlock] into pastOcFees
+	// on that OC's next call, so it is part of what withdrawOCFee will pay.
+	LastStartBlock(opts *bind.CallOpts, oc common.Address) (*big.Int, error)
 	Declines(opts *bind.CallOpts, address common.Address) (bool, error)
 	HasVotedAdd(opts *bind.CallOpts, voter common.Address, target common.Address) (bool, error)
 	HasVotedRemove(opts *bind.CallOpts, voter common.Address, target common.Address) (bool, error)
@@ -203,6 +207,11 @@ type ConnectionProps struct {
 	// Contract state that DOES gate a tx or the seed is intentionally never
 	// cached here; see state_cache.go.
 	cachedGasPrice cachedValue[*big.Int]
+
+	// lastEpochStart is the contract startBlock seen on the previous run-loop
+	// cycle. When it moves, some node rewarded the epoch; the loop audits that
+	// reward before doing anything else. Nil until the first cycle.
+	lastEpochStart *big.Int
 }
 
 // ResolvedCacheDir returns the directory for on-disk caches, defaulting to

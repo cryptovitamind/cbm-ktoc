@@ -83,6 +83,12 @@ func VoteAndReward(cProps *ConnectionProps) error {
 		return fmt.Errorf("invalid epoch interval")
 	}
 
+	// If startBlock moved since the last cycle, some node rewarded the epoch.
+	// Audit that reward now, before the not-time-to-vote early return below,
+	// so an overpayment is reported the cycle it lands rather than at the
+	// next epoch end.
+	checkEpochAdvance(cProps, startBlock, interval, currentNum.Uint64())
+
 	// Calculate end block
 	endBlock := new(big.Int).Add(startBlock, big.NewInt(int64(interval)))
 

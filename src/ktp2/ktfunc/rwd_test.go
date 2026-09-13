@@ -480,7 +480,20 @@ func withdrawSetup(t *testing.T) (
 	// PrintKtBalance + PrintBalanceOfAddr both call BalanceAt; cover with .Maybe().
 	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(int64(1e18)), nil).Maybe()
 	mockClient.On("BalanceAt", mock.Anything, myPub, (*big.Int)(nil)).Return(big.NewInt(int64(1e18)), nil).Maybe()
+	// The forfeit guard estimates the full claim the way withdrawOCFee pays
+	// it: pastOcFees + fees parked under lastStartBlock + the current epoch's
+	// fee once complete. Defaults: epoch 100..110 complete at head 200, no
+	// unmigrated or current-epoch fees.
+	withdrawEpochDefaults(mockClient, mockKt, myPub)
 	return
+}
+
+func withdrawEpochDefaults(mockClient *MockEthClient, mockKt *MockKtv2, oc common.Address) {
+	mockKt.On("StartBlock", mock.Anything).Return(big.NewInt(100), nil).Maybe()
+	mockKt.On("EpochInterval", mock.Anything).Return(uint16(10), nil).Maybe()
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(200), nil).Maybe()
+	mockKt.On("LastStartBlock", mock.Anything, oc).Return(big.NewInt(100), nil).Maybe()
+	mockKt.On("OcFees", mock.Anything, oc, mock.Anything).Return(big.NewInt(0), nil).Maybe()
 }
 
 // TestWithdrawOCFees_NoFeesOwedReturnsEarly — PastOcFees returns 0.
@@ -519,6 +532,7 @@ func TestWithdrawOCFees_BalanceBeforeFailureBlocksTx(t *testing.T) {
 	// Reset the default Maybe() mock for caller's BalanceAt to fail.
 	mockClient.ExpectedCalls = nil
 	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(int64(1e18)), nil).Maybe()
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(200), nil).Maybe()
 	mockClient.On("BalanceAt", mock.Anything, caller, (*big.Int)(nil)).
 		Return((*big.Int)(nil), errors.New("rpc: timeout"))
 
@@ -541,6 +555,83 @@ func TestWithdrawOCFees_WithdrawOCFeeContractErrorPropagates(t *testing.T) {
 	err := WithdrawOCFees(cProps, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "withdrawOCFee")
+}
+
+// Forfeit guard. withdrawOCFee pays the claim all-or-nothing and, when the
+// contract balance is short, zeroes the claim WITHOUT paying it. The node must
+// refuse to send that transaction.
+
+// TestWithdrawOCFees_RefusesWhenContractCannotPayClaim — claim 2 ETH, contract
+// holds 1 ETH. No tx, and the error says why.
+func TestWithdrawOCFees_RefusesWhenContractCannotPayClaim(t *testing.T) {
+	cProps, _, mockKt, caller := withdrawSetup(t)
+	mockKt.On("PastOcFees", mock.Anything, caller).Return(big.NewInt(int64(2e18)), nil)
+
+	err := WithdrawOCFees(cProps, "")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), WithdrawForfeitGuardMsg)
+	mockKt.AssertNotCalled(t, "WithdrawOCFee", mock.Anything)
+}
+
+// TestWithdrawOCFees_ClaimIncludesUnmigratedAndCurrentEpochFees — pastOcFees
+// alone (0.5 ETH) fits the 1 ETH balance, but the contract will also pay the
+// fee parked under lastStartBlock (0.4) and the completed epoch's fee (0.3):
+// 1.2 ETH total, which it cannot cover. The guard must see the full claim.
+func TestWithdrawOCFees_ClaimIncludesUnmigratedAndCurrentEpochFees(t *testing.T) {
+	cProps, mockClient, mockKt, caller := withdrawSetup(t)
+	mockKt.ExpectedCalls = nil
+	mockKt.On("PastOcFees", mock.Anything, caller).Return(big.NewInt(int64(5e17)), nil)
+	mockKt.On("StartBlock", mock.Anything).Return(big.NewInt(100), nil)
+	mockKt.On("EpochInterval", mock.Anything).Return(uint16(10), nil)
+	mockKt.On("LastStartBlock", mock.Anything, caller).Return(big.NewInt(90), nil)
+	mockKt.On("OcFees", mock.Anything, caller, big.NewInt(90)).Return(big.NewInt(int64(4e17)), nil)
+	mockKt.On("OcFees", mock.Anything, caller, big.NewInt(100)).Return(big.NewInt(int64(3e17)), nil)
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(200), nil).Maybe()
+
+	err := WithdrawOCFees(cProps, "")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), WithdrawForfeitGuardMsg)
+	assert.Contains(t, err.Error(), "1.200000", "the full claim is reported")
+	mockKt.AssertNotCalled(t, "WithdrawOCFee", mock.Anything)
+}
+
+// TestWithdrawOCFees_ProceedsWhenContractCanPayClaim — 0.5 ETH claim against a
+// 1 ETH balance goes through to the contract call.
+func TestWithdrawOCFees_ProceedsWhenContractCanPayClaim(t *testing.T) {
+	cProps, _, mockKt, caller := withdrawSetup(t)
+	mockKt.On("PastOcFees", mock.Anything, caller).Return(big.NewInt(int64(5e17)), nil)
+	mockKt.On("WithdrawOCFee", mock.Anything).
+		Return((*types.Transaction)(nil), errors.New("stop here"))
+
+	err := WithdrawOCFees(cProps, "")
+
+	assert.Error(t, err)
+	assert.NotContains(t, err.Error(), WithdrawForfeitGuardMsg)
+	mockKt.AssertCalled(t, "WithdrawOCFee", mock.Anything)
+}
+
+// TestWithdrawOCFees_UnmigratedFeesAloneAreWithdrawable — right after an epoch
+// ends, pastOcFees is still 0 for every OC: the fees sit under the old epoch
+// key until migrateFees runs on the OC's next call. "No fees owed" here would
+// be wrong; the contract would pay them.
+func TestWithdrawOCFees_UnmigratedFeesAloneAreWithdrawable(t *testing.T) {
+	cProps, mockClient, mockKt, caller := withdrawSetup(t)
+	mockKt.ExpectedCalls = nil
+	mockKt.On("PastOcFees", mock.Anything, caller).Return(big.NewInt(0), nil)
+	mockKt.On("StartBlock", mock.Anything).Return(big.NewInt(100), nil)
+	mockKt.On("EpochInterval", mock.Anything).Return(uint16(10), nil)
+	mockKt.On("LastStartBlock", mock.Anything, caller).Return(big.NewInt(90), nil)
+	mockKt.On("OcFees", mock.Anything, caller, big.NewInt(90)).Return(big.NewInt(int64(1e17)), nil)
+	mockKt.On("OcFees", mock.Anything, caller, big.NewInt(100)).Return(big.NewInt(0), nil)
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(200), nil).Maybe()
+	mockKt.On("WithdrawOCFee", mock.Anything).
+		Return((*types.Transaction)(nil), errors.New("stop here"))
+
+	_ = WithdrawOCFees(cProps, "")
+
+	mockKt.AssertCalled(t, "WithdrawOCFee", mock.Anything)
 }
 
 // ============================================================================

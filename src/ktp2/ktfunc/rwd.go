@@ -18,6 +18,11 @@ import (
 	"go.etcd.io/bbolt"
 )
 
+// WithdrawForfeitGuardMsg opens the error returned when the contract cannot
+// pay this node's full fee claim. withdrawOCFee is all-or-nothing and zeroes
+// the claim when the balance is short, so sending it would forfeit the fees.
+const WithdrawForfeitGuardMsg = "refusing to withdraw: the contract cannot pay the full claim and withdrawOCFee would zero it without paying"
+
 type FeeInfo struct {
 	Block uint64
 	Fee   *big.Int

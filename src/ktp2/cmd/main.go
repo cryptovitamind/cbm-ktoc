@@ -83,6 +83,7 @@ type Flags struct {
 	logDir                string
 	zipLogs               bool
 	showVotes             bool
+	auditRewards          string
 	voteFor               string
 	resetLotteryVote      string
 }
@@ -253,6 +254,7 @@ func parseFlags() Flags {
 	txMineTimeout := flag.Duration("txMineTimeout", ktfunc.DefaultTxMineTimeout, fmt.Sprintf("How long to wait for a submitted transaction to be mined before giving up and retrying on the next cycle (ex: 2m, 10m). Prevents the node from hanging forever on a tx that was dropped or stuck in the mempool. Default %s. Can also be set via the TX_MINE_TIMEOUT env var.", ktfunc.DefaultTxMineTimeout))
 	logDir := flag.String("logDir", "logs", "Directory to write log files to. Logs are mirrored from stdout into a rotating file here.")
 	zipLogs := flag.Bool("zipLogs", false, "Bundle recent log files into a zip in the current directory (for sending a bug report), then exit.")
+	auditRewards := flag.String(ktfunc.AuditRewardsFlagName, "", "Audit past rewards: for each Rwd, which OC sent it, the amount it passed vs. balance-minus-OC-fees at the time, and whether it overpaid into the fee reserve. Syntax: "+ktfunc.AuditRangeAll+" or <startBlock>:<endBlock>. Historic reads need an archive-capable RPC.")
 	showVotes := flag.Bool("showVotes", false, "Print the current epoch's reward votes: per-candidate tallies and which OC voted for which address.")
 	voteFor := flag.String("voteFor", "", "Manually cast a reward vote for the given address in the current epoch, overriding the lottery. Use to converge a stuck epoch on an agreed winner.")
 	resetLotteryVote := flag.String("resetLotteryVote", "", "Undo this node's reward vote for the given address (the one you previously voted for) in the current epoch, so you can re-vote.")
@@ -297,6 +299,7 @@ func parseFlags() Flags {
 		fmt.Fprintf(os.Stderr, "  -withdrawFees       %s\n", "Withdraw owed fees from kt.")
 		fmt.Fprintf(os.Stderr, "  -verifyLastWinner   %s\n", "Verify the last rewarded winner was correctly and fairly selected.")
 		fmt.Fprintf(os.Stderr, "  -verifyWeighting <curve> %s\n", "Curve for the -verifyLastWinner replay: sqrt (current) or log (pre-v0.5.0-beta epochs). Never affects live voting.")
+		fmt.Fprintf(os.Stderr, "  -auditRewards <all|n:n> %s\n", "Audit past rewards: sender OC, amount passed vs. balance-minus-fees, OVERPAID/OK verdict. Needs an archive-capable RPC for old blocks.")
 		fmt.Fprintf(os.Stderr, "  -showVotes          %s\n", "Show the current epoch's reward votes: per-candidate tallies and which OC voted for which address.")
 		fmt.Fprintf(os.Stderr, "  -voteFor <address>  %s\n", "Manually cast a reward vote for an address this epoch (override the lottery). Use to converge a stuck epoch.")
 		fmt.Fprintf(os.Stderr, "  -resetLotteryVote <address> %s\n", "Undo this node's reward vote (the address you voted for) so you can re-vote this epoch.")
@@ -366,6 +369,7 @@ func parseFlags() Flags {
 		logDir:                *logDir,
 		zipLogs:               *zipLogs,
 		showVotes:             *showVotes,
+		auditRewards:          *auditRewards,
 		voteFor:               *voteFor,
 		resetLotteryVote:      *resetLotteryVote,
 	}
@@ -535,6 +539,20 @@ func handleSingleOperations(cProps *ktfunc.ConnectionProps, flags Flags) {
 	if flags.vote {
 		LogOperationStart("Finding receiver for voting")
 		ktfunc.VoteAndReward(cProps)
+	}
+
+	if flags.auditRewards != "" {
+		LogOperationStart("Auditing rewards")
+		from, to, err := ktfunc.ResolveAuditRange(cProps, flags.auditRewards)
+		if err != nil {
+			log.Fatalf("Cannot audit rewards: %v", err)
+		}
+		audits, err := ktfunc.AuditRewards(cProps, from, to)
+		if err != nil {
+			log.Errorf("Failed to audit rewards: %v", err)
+		} else {
+			ktfunc.PrintRewardAudit(cProps, audits)
+		}
 	}
 
 	if flags.showVotes {

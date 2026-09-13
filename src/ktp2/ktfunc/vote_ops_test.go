@@ -357,6 +357,11 @@ func (m *MockEthClient) SubscribeNewHead(ctx context.Context, ch chan<- *types.H
 }
 
 // PastOcFees
+func (m *MockKtv2) LastStartBlock(opts *bind.CallOpts, oc common.Address) (*big.Int, error) {
+	args := m.Called(opts, oc)
+	return args.Get(0).(*big.Int), args.Error(1)
+}
+
 func (m *MockKtv2) PastOcFees(opts *bind.CallOpts, oc common.Address) (*big.Int, error) {
 	args := m.Called(opts, oc)
 	return args.Get(0).(*big.Int), args.Error(1)
