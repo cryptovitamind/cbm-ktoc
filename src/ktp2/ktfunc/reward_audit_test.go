@@ -270,9 +270,11 @@ func TestCheckEpochAdvance_LogsErrorNamingOverpayingOC(t *testing.T) {
 	cProps.lastEpochStart = big.NewInt(50) // previous cycle saw epoch 50..110
 	txY, addrY := rwdTxFromKey(t, testKeyY, cProps.ChainID, kt, auditWinner, big.NewInt(1e18))
 
-	// The audit window is the old epoch end through head.
+	// The audit window is the old epoch end through the chain head, re-read
+	// so a reward mined right after the loop's header read is not missed.
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(131), nil)
 	mockKt.On("FilterRwd", mock.MatchedBy(func(o *bind.FilterOpts) bool {
-		return o.Start == 110 && o.End != nil && *o.End == 130
+		return o.Start == 110 && o.End != nil && *o.End == 131
 	})).Return(&mockRwdIter{events: []*ktv2.Ktv2Rwd{rwdEvent(auditWinner, big.NewInt(98e16), 115, txY)}}, nil)
 	mockClient.On("TransactionByHash", mock.Anything, txY.Hash()).Return(txY, false, nil)
 	expectRewardState(mockClient, mockKt, kt, 115, big.NewInt(1e18), big.NewInt(1e17), big.NewInt(2e16), big.NewInt(12e16))
@@ -319,6 +321,7 @@ func TestVoteAndReward_EpochAdvanceCheckRunsBeforeEpochEndWait(t *testing.T) {
 	mockKt.On("StartBlock", mock.Anything).Return(big.NewInt(110), nil) // advanced; new epoch ends at 170
 	mockKt.On("EpochInterval", mock.Anything).Return(uint16(60), nil)
 	mockKt.On("FilterRwd", mock.Anything).Return(&mockRwdIter{}, nil)
+	mockClient.On("BlockNumber", mock.Anything).Return(uint64(120), nil).Maybe()
 	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(1e18), nil).Maybe()
 	mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil).Maybe()
 

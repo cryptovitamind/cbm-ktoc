@@ -106,7 +106,11 @@ func TestRewardWinningWallet_RefetchesTlOcFeesPerCall(t *testing.T) {
 	winner := common.HexToAddress("0xabc123456789012345678901234567890123456")
 	mockClient.On("BalanceAt", mock.Anything, winner, (*big.Int)(nil)).Return(big.NewInt(0), nil)
 	mockClient.On("BalanceAt", mock.Anything, cProps.KtAddr, (*big.Int)(nil)).Return(big.NewInt(1e18), nil)
-	mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil)
+	// Each reward reads tlOcFees twice: once to size the pot, once for the
+	// fee-reserve check after the tx lands. Fees are 0 through the first
+	// reward, then 0.1 ETH is owed before the second.
+	mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(0), nil).Twice()
+	mockKt.On("TlOcFees", mock.Anything).Return(big.NewInt(1e17), nil)
 	mockKt.On("Rwd", mock.Anything, winner, mock.Anything).Return(
 		types.NewTransaction(0, winner, big.NewInt(0), 0, big.NewInt(0), []byte{}), nil)
 	mockClient.On("TransactionReceipt", mock.Anything, mock.Anything).Return(
@@ -119,7 +123,9 @@ func TestRewardWinningWallet_RefetchesTlOcFeesPerCall(t *testing.T) {
 		}
 	}
 
-	// tlOcFees feeds the reward amount; a stale value reverts the reward tx,
-	// so it must be read fresh every reward.
-	mockKt.AssertNumberOfCalls(t, "TlOcFees", 2)
+	// tlOcFees feeds the reward amount; a stale value overpays the winner out
+	// of the operators' fee reserve, so it must be read fresh every reward:
+	// the second reward must see the new 0.1 ETH owed and pass 0.9 ETH.
+	mockKt.AssertCalled(t, "Rwd", mock.Anything, winner, big.NewInt(1e18))
+	mockKt.AssertCalled(t, "Rwd", mock.Anything, winner, big.NewInt(9e17))
 }

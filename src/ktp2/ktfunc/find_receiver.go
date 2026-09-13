@@ -515,9 +515,10 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address, totalMi
 	}
 
 	// Get total OC fees owed to subtract from reward amount. Read fresh
-	// (NOT cached): tlOcFees changes on-chain as OCs accrue/withdraw fees,
-	// and a stale value miscomputes rewardAmount, causing the contract's
-	// balance invariant to revert the reward tx.
+	// (NOT cached): tlOcFees changes on-chain as OCs accrue/withdraw fees.
+	// The contract does NOT check _amt against tlOcFees (rwd sends whatever
+	// it is given, less its own fee), so this subtraction is the only thing
+	// keeping the operators' fee reserve out of the winner's payout.
 	tlOcFees, err := cProps.Kt.TlOcFees(&bind.CallOpts{Context: context.Background(), From: cProps.MyPubKey})
 	if err != nil {
 		return fmt.Errorf("failed to get total OC fees: %v", err)
@@ -568,6 +569,16 @@ func rewardWinningWallet(cProps *ConnectionProps, winner common.Address, totalMi
 	}
 
 	log.Debugf("Reward completed. %d blocks have passed.", cProps.BlocksToWait)
+
+	// The contract trusts the amount we passed, so confirm the fee reserve is
+	// still whole now that the reward has landed.
+	if reserve, err := ReadFeeReserve(cProps, nil); err != nil {
+		log.Warnf("Could not read the fee reserve after the reward: %v", err)
+	} else if reserve.Underfunded() {
+		log.Warnf("Fee reserve after this node's reward: %s. Another OC's vote or fee withdrawal landed between reading tlOcFees and the reward being mined.", reserve)
+	} else {
+		log.Printf("Fee reserve after reward: %s", reserve)
+	}
 
 	// Verify the winner's balance after the reward
 	balanceAfter, err := cProps.Client.BalanceAt(context.Background(), winner, nil)

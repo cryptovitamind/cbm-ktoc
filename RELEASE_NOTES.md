@@ -1,5 +1,54 @@
 # Release Notes
 
+## v0.5.1-beta
+
+**If you operate a node on a contract whose balance is below the fees it owes,
+do not run `-withdrawFees` on an older build.** The contract zeroes a claim it
+cannot pay instead of refusing, and the old node would let you send that
+transaction. This release refuses it for you.
+
+### Fixed: an old node drained a contract's fee reserve, and nothing said so
+
+On 2026-09-02 an operator still running a build from before March 2026
+rewarded the SHI contract. Those builds passed the contract's whole balance to
+the reward call, so the winner received the 0.0049 ETH that was owed to the
+other operators as fees. The next epoch's winner then received 0 ETH, because a
+current node correctly computes the pot as balance minus fees owed, and that
+was negative. Nobody was told, because no part of the node looked at that
+number.
+
+The contract records fees but never checks that its balance covers them: the
+reward call sends whatever amount the calling node passes in. The node is the
+only line of defense, and the node now watches the line:
+
+- **Fee reserve in `-ktProps`.** The contract-state printout ends with balance
+  minus OC fees owed (the next pot, or the deficit), plus this node's own
+  withdrawable claim and a warning when withdrawing would forfeit it.
+- **Epoch-advance check in `-run`.** Every cycle the node notices when another
+  node has rewarded the epoch, audits that reward, and logs an ERROR naming the
+  OC if it overpaid, with the exact amount. It also checks the reserve after
+  its own rewards.
+- **`-auditRewards all` (or `<startBlock>:<endBlock>`).** Replays every past
+  reward: sender OC, the amount passed vs. balance-minus-fees at that block,
+  OK / OVERPAID / UNDERPAID, and whether the OC passed the whole balance (the
+  fingerprint of a pre-v0.4.5-beta build). Judging old blocks needs an
+  archive-capable RPC; without one the audit still names the sender and the
+  amount.
+- **Withdraw forfeit guard.** `-withdrawFees` now estimates the full claim the
+  way the contract pays it (migrated fees, fees awaiting migration, and the
+  completed epoch's fee) and refuses to send the transaction when the contract
+  cannot cover it. This also fixes the old "No fees owed" answer right after an
+  epoch ended, when the fees were real but not yet migrated.
+
+### Upgrade notes
+
+Recommended for every operator. A single node on this release will report an
+overpayment by any other node, so one upgraded operator is enough to catch a
+straggler. A deficit heals on its own: the next winners' pots are reduced until
+the balance catches up with the fees owed. Nothing is lost except by an
+operator who withdraws while the contract is short, which this release
+prevents.
+
 ## v0.5.0-beta
 
 ### Changed: winner weighting is now square root

@@ -75,6 +75,14 @@ A few flags worth knowing beyond the help text:
 - `-voteFor <address>` and `-resetLotteryVote <address>` recover a wedged epoch.
   Reset undoes this node's vote; voteFor forces a vote on an agreed address so
   the operators can converge.
+- `-ktProps` now includes the fee reserve: contract balance minus the OC fees
+  owed. That difference is the next pot; when it is negative the contract
+  cannot pay every operator and winners get nothing until income refills it.
+- `-auditRewards all` (or `<startBlock>:<endBlock>`) replays every past reward:
+  which OC sent it, the amount it passed to the contract against
+  balance-minus-fees at that block, and an OK/OVERPAID verdict. Use it when the
+  reserve is underfunded to see which node drained it. Judging old blocks needs
+  an archive-capable RPC.
 - `-confirmationDepth <n>` sets how many blocks a node waits past the seed block
   before submitting, for reorg safety. It does not change which block seeds the
   lottery, so operators can set it independently.

@@ -157,7 +157,7 @@ func loadMasterProperties() ktfunc.Addresses {
 // bannerVersion is the single source of truth for the build's identity. It is
 // rendered in the startup banner and recorded in --zipLogs bundles, so the
 // version an operator is running is always visible to them and to us.
-const bannerVersion = "v0.5.0-beta"
+const bannerVersion = "v0.5.1-beta"
 
 // runZipLogs bundles recent log files into a zip in the current directory and
 // prints its path, so an operator can attach it to a bug report. The metadata
@@ -254,7 +254,7 @@ func parseFlags() Flags {
 	txMineTimeout := flag.Duration("txMineTimeout", ktfunc.DefaultTxMineTimeout, fmt.Sprintf("How long to wait for a submitted transaction to be mined before giving up and retrying on the next cycle (ex: 2m, 10m). Prevents the node from hanging forever on a tx that was dropped or stuck in the mempool. Default %s. Can also be set via the TX_MINE_TIMEOUT env var.", ktfunc.DefaultTxMineTimeout))
 	logDir := flag.String("logDir", "logs", "Directory to write log files to. Logs are mirrored from stdout into a rotating file here.")
 	zipLogs := flag.Bool("zipLogs", false, "Bundle recent log files into a zip in the current directory (for sending a bug report), then exit.")
-	auditRewards := flag.String(ktfunc.AuditRewardsFlagName, "", "Audit past rewards: for each Rwd, which OC sent it, the amount it passed vs. balance-minus-OC-fees at the time, and whether it overpaid into the fee reserve. Syntax: "+ktfunc.AuditRangeAll+" or <startBlock>:<endBlock>. Historic reads need an archive-capable RPC.")
+	auditRewards := flag.String(ktfunc.AuditRewardsFlagName, "", "Audit past rewards: for each Rwd, which OC sent it, the amount it passed vs. balance-minus-OC-fees at the time, and whether it overpaid into the fee reserve. Syntax: "+ktfunc.AuditRangeAll+" or <startBlock>:<endBlock>. Historic reads need an archive-capable RPC; widen -chunkSize (e.g. 10000) if your provider allows it, to scan faster.")
 	showVotes := flag.Bool("showVotes", false, "Print the current epoch's reward votes: per-candidate tallies and which OC voted for which address.")
 	voteFor := flag.String("voteFor", "", "Manually cast a reward vote for the given address in the current epoch, overriding the lottery. Use to converge a stuck epoch on an agreed winner.")
 	resetLotteryVote := flag.String("resetLotteryVote", "", "Undo this node's reward vote for the given address (the one you previously voted for) in the current epoch, so you can re-vote.")

@@ -251,9 +251,8 @@ func WithdrawOCFees(cProps *ConnectionProps, blocks string) error {
 	log.Printf("Withdrawing OC fees")
 	// Print initial contract balance
 	PrintKtBalance(cProps)
-	// Get caller address
-	caller := ToAddr(cProps.Addresses.MyPublicKey)
-	PrintBalanceOfAddr(cProps, cProps.MyPubKey)
+	caller := cProps.MyPubKey
+	PrintBalanceOfAddr(cProps, caller)
 	// Open DB
 	db, err := openFeesDB(cProps)
 	if err != nil {
@@ -261,18 +260,33 @@ func WithdrawOCFees(cProps *ConnectionProps, blocks string) error {
 	}
 	defer db.Close()
 	log.Debug("Opened fees DB")
-	// Get total owed from contract (pastOcFees)
-	callOpts := &bind.CallOpts{Context: context.Background()}
-	totalFeesOwed, err := cProps.Kt.PastOcFees(callOpts, caller)
+	// What withdrawOCFee will actually try to pay: pastOcFees plus the fees
+	// still parked under this node's earlier epoch key, which the contract
+	// migrates and pays in the same call. pastOcFees alone reads 0 right
+	// after an epoch ends even though fees are owed.
+	claim, err := EstimateFeeClaim(cProps, caller)
 	if err != nil {
-		return fmt.Errorf("failed to query pastOcFees: %v", err)
+		return fmt.Errorf("failed to estimate fee claim: %w", err)
 	}
-	weiToEthOwed := new(big.Float).SetInt(totalFeesOwed)
-	owedEth := new(big.Float).Quo(weiToEthOwed, big.NewFloat(1e18))
-	log.Printf("Total fees owed: %.6f ETH", owedEth)
-	if owedEth.Cmp(big.NewFloat(0)) <= 0 {
+	totalFeesOwed := claim.Total
+	owedEth := new(big.Float).Quo(new(big.Float).SetInt(totalFeesOwed), big.NewFloat(1e18))
+	log.Printf("Total fees owed: %.6f ETH (migrated %s, awaiting migration %s, current epoch %s)",
+		owedEth, fmtEth(claim.Past), fmtEth(claim.Unmigrated), fmtEth(claim.CurrentEpoch))
+	if totalFeesOwed.Sign() <= 0 {
 		log.Infof("No fees owed")
 		return nil
+	}
+	// Forfeit guard. The contract pays the claim all-or-nothing and, when its
+	// balance is short, zeroes the claim WITHOUT paying it (Ktv2.withdrawOCFee
+	// has no revert on that path). Never send a withdraw it cannot honor.
+	contractBalance, err := cProps.Client.BalanceAt(context.Background(), cProps.KtAddr, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get contract balance: %w", err)
+	}
+	if contractBalance.Cmp(totalFeesOwed) < 0 {
+		short := new(big.Int).Sub(totalFeesOwed, contractBalance)
+		return fmt.Errorf("%s (claim %s ETH, contract balance %s ETH, short by %s ETH). Wait for the fee reserve to refill, or run -%s %s to find the reward that drained it",
+			WithdrawForfeitGuardMsg, fmtEth(totalFeesOwed), fmtEth(contractBalance), fmtEth(short), AuditRewardsFlagName, AuditRangeAll)
 	}
 	// Get caller's balance before withdrawal
 	balanceBefore, err := cProps.Client.BalanceAt(context.Background(), caller, nil)

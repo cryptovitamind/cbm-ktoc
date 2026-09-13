@@ -448,6 +448,9 @@ func PrintKtContractVariables(cProps *ConnectionProps) {
 
 	// Convert Wei to ETH
 	PrintKtBalance(cProps)
+	if err := PrintFeeReserve(cProps); err != nil {
+		log.Warnf("Could not print fee reserve: %v", err)
+	}
 
 	// Reconstruct the current epoch's votes from events so the operator can see
 	// how the reward vote stands (the raw blockRwd / ocRwdrVote mappings can't
