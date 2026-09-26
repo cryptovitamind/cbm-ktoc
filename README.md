@@ -24,14 +24,15 @@ You need Go 1.23 or newer on your PATH. Nothing else.
 .\build.ps1
 ```
 
-Both scripts download dependencies, build the binary, run the test suite with
-coverage, and write a `build.log`. A successful run leaves the executable at the
-repo root: `ktoc` on Linux/macOS, `ktoc.exe` on Windows.
+Both scripts download dependencies, build both binaries, run the test suite
+with coverage, and write a `build.log`. A successful run leaves `ktoc` and
+`battles` at the repo root (`.exe` on Windows).
 
-To build the binary alone, skipping the tests:
+To build a binary alone, skipping the tests:
 
 ```
 go build -o ktoc ./src/ktp2/cmd
+go build -o battles ./src/battles/cmd
 ```
 
 ## Configuration
@@ -88,6 +89,52 @@ A few flags worth knowing beyond the help text:
   lottery, so operators can set it independently.
 - `-logDir <dir>` chooses where logs are written (default `logs`). `-zipLogs`
   bundles recent logs into a zip for a bug report, then exits.
+
+## battles: the Vault tool
+
+`battles` is a second executable in this repo, built by the same scripts. It
+drives the `BurnBankVault` contract (`src/contracts/BurnBankVault.sol`): an
+escrow where a donor locks ETH under the hash of a secret key, and anyone who
+learns the key can send that ETH, once, into the `give()` of a whitelisted
+Burn Bank. Nobody can withdraw it, the owner included.
+
+Run any command with no `battles.env` present and a guided setup starts. It
+asks for an RPC endpoint (probed for its chain ID), the signing key (offered
+from a ktoc `.env` if one is beside it, never echoed), and either an existing
+Vault address or `deploy` to publish a new one. It then writes `battles.env`
+with owner-only permissions. Every value can also be set as an environment
+variable of the same name (`BATTLES_ETH_ENDPOINT`, `BATTLES_PRIVATE_KEY`,
+`BATTLES_VAULT_ADDR`, `BATTLES_CHAIN_ID`, `BATTLES_VAULT_BLOCK`), and a job
+that sets all of them needs no file. `BATTLES_VAULT_BLOCK` is the deploy
+block, where event scans start; the tool records it on deploy and finds it by
+search otherwise.
+
+```
+./battles init                          # guided setup (also runs on first use)
+./battles deploy -banks 0xA,0xB         # deploy a Vault whitelisting those Burn Banks
+./battles fund -amount 0.01             # lock ETH; prints the SECRET key and the public hash
+./battles status -hash 0x..             # funder, amount, funded block, unlockable or spent
+./battles verify -tx 0x.. -hash 0x..    # did this transaction fulfill the challenge?
+./battles unlock -key 0x.. -bank 0x..   # send the vault into that Burn Bank's give()
+./battles challenges                    # every vault on the contract and its outcome
+./battles banks | add-bank | remove-bank
+```
+
+Challenge flow: fund, post the hash and the funding transaction, keep the key
+secret. When someone matches with a `give()` to a whitelisted bank, `verify`
+confirms it was successful, at least the vault amount, and mined after the
+funding block. Publish the key; anyone can then `unlock`.
+
+Design choices worth knowing: one deposit per key hash (a top-up needs a new
+key, so the posted amount is exactly what the key unlocks); plain ETH
+transfers to the Vault revert; a lost key means the ETH is stuck for good; and
+once a key is public the unlock is a race, so a mempool watcher can pick a
+different bank than the matcher intended.
+
+To recompile the contracts and regenerate the Go bindings after editing
+anything in `src/contracts`, run `./src/contracts/compile.sh`. It uses a
+project-local solc (installed under `src/contracts/tools` on first use) and
+the pinned go-ethereum's abigen; nothing global.
 
 ## Local testing
 

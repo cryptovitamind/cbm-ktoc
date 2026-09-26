@@ -5,6 +5,8 @@ $ErrorActionPreference = "Stop"
 $ScriptRoot = $PSScriptRoot
 $SrcDir = Join-Path $ScriptRoot "src\ktp2\cmd"
 $Executable = Join-Path $ScriptRoot "ktoc.exe"
+$BattlesSrcDir = Join-Path $ScriptRoot "src\battles\cmd"
+$BattlesExecutable = Join-Path $ScriptRoot "battles.exe"
 $LogFile = Join-Path $ScriptRoot "build.log"
 
 # Function to log messages, supporting pipeline input and optional message
@@ -69,16 +71,22 @@ try {
     if ($LASTEXITCODE -ne 0) { Handle-Error "Failed to get ktfunc dependencies: $output" }
     if ($output.Trim()) { Write-Log -Message $output.Trim() } else { Write-Log -Message "No updates for ktfunc dependencies" }
 
-    # Build executable
-    Write-Log -Message "Building executable..."
+    # Build executables
+    Write-Log -Message "Building ktoc executable..."
     Get-Location
     $output = & go build -o $Executable 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { Handle-Error "Build failed: $output" }
     if ($output.Trim()) { Write-Log -Message $output.Trim() } else { Write-Log -Message "Build completed with no additional output" }
 
-    # Run tests
+    Write-Log -Message "Building battles executable..."
+    Set-Location $BattlesSrcDir
+    $output = & go build -o $BattlesExecutable 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { Handle-Error "battles build failed: $output" }
+    if ($output.Trim()) { Write-Log -Message $output.Trim() } else { Write-Log -Message "battles build completed with no additional output" }
+
+    # Run tests for the whole repo (ktoc and battles)
     Write-Log -Message "Running tests..."
-    Set-Location (Split-Path $SrcDir -Parent)
+    Set-Location $ScriptRoot
     $originalErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     $testOutput = & go test ./... -v -cover -coverprofile=coverage.out 2>&1

@@ -7,6 +7,8 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SRC_DIR="${SCRIPT_DIR}/src/ktp2/cmd"
 readonly EXECUTABLE="${SCRIPT_DIR}/ktoc"
+readonly BATTLES_SRC_DIR="${SCRIPT_DIR}/src/battles/cmd"
+readonly BATTLES_EXECUTABLE="${SCRIPT_DIR}/battles"
 readonly LOG_FILE="${SCRIPT_DIR}/build.log"
 
 # Colors for output
@@ -56,11 +58,14 @@ main() {
     go get ktp2/src/ktp2/cmd ktp2/src/ktp2/tests || error "Failed to get cmd and tests dependencies"
     go get -t ktp2/src/ktp2/ktfunc || error "Failed to get ktfunc dependencies"
 
-    info "Building executable..."
+    info "Building ktoc executable..."
     go build -o "$EXECUTABLE" || error "Build failed"
 
-    info "Running tests..."
-    cd .. || error "Failed to change directory for tests"
+    info "Building battles executable..."
+    (cd "$BATTLES_SRC_DIR" && go build -o "$BATTLES_EXECUTABLE") || error "battles build failed"
+
+    info "Running tests (ktoc and battles)..."
+    cd "$SCRIPT_DIR" || error "Failed to change directory for tests"
     go test ./... -v -cover -coverprofile=coverage.out || error "Tests failed"
     go tool cover -func=coverage.out | tee -a "$LOG_FILE" || info "Coverage report generation failed, continuing..."
 
@@ -68,7 +73,7 @@ main() {
     cd "$SCRIPT_DIR" || error "Failed to return to original directory"
 
     success "Build process completed successfully"
-    info "Executable built at: ${EXECUTABLE}"
+    info "Executables built at: ${EXECUTABLE} and ${BATTLES_EXECUTABLE}"
 }
 
 # Trap errors to ensure cleanup

@@ -1,5 +1,60 @@
 # Release Notes
 
+## v0.5.2-beta
+
+No behavior change in ktoc. The Go module gained dependencies for the new
+`battles` tool (the simulated-backend test harness and a terminal library), so
+a ktoc built from this tree links a different dependency set than v0.5.1-beta.
+Rebuilt and re-tested; nothing for operators to do.
+
+## battles v0.1.0-beta
+
+New executable, built alongside ktoc by the same build scripts, plus the
+`BurnBankVault` contract it drives.
+
+### New: the Vault contract
+
+`src/contracts/BurnBankVault.sol` is the escrow behind Burn Bank Battles
+challenges. A donor locks ETH under the keccak256 hash of a 32-byte secret.
+Anyone who later presents the secret may send the whole deposit, once, into
+the `give()` of a whitelisted Burn Bank. There is no withdraw function for
+anyone. The whitelist is owner-managed and checked at unlock time.
+
+Three decisions the spec left open were settled as follows:
+
+- **One deposit per key hash.** Funding an already-funded hash reverts, so a
+  0.1 ETH challenge can never quietly become a 10 ETH vault. Top-ups need a
+  new key and a new challenge.
+- **The unlock is a race, as the spec intends.** Once a key is public, anyone
+  can spend it and choose the bank, including by front-running the matcher.
+  A site that wants the matcher to choose must reveal the key privately.
+- **Attribution comes from the Vault's own `VaultUnlocked` event**, which
+  records the key hash, the bank, the amount, and who unlocked it. The bank's
+  `Gave` event names the Vault as the giver.
+
+Two safety properties on top: plain ETH sent to the contract reverts (with no
+withdraw path it would otherwise be lost), and the vault is marked spent
+before the bank is paid, so a malicious bank cannot re-enter and unlock twice.
+The test suite deploys real Ktv2 bytecode and proves both, along with the
+reentrancy case.
+
+### New: `battles` command-line tool
+
+Guided first run: any command with no `battles.env` walks through endpoint,
+signing key, and vault (an address, or `deploy` to publish one), then writes
+the file 0600. Commands: `init`, `deploy`, `keygen`, `fund`, `status`,
+`verify`, `unlock`, `challenges`, `banks`, `add-bank`, `remove-bank`,
+`version`. `verify` is the off-chain judgment the site needs: it confirms a
+claimed transaction was a successful `give()` to a whitelisted bank, for at
+least the vault amount, mined after the vault was funded.
+
+### Build
+
+`./src/contracts/compile.sh` compiles every contract with a project-local
+solc and regenerates the Go bindings with the pinned go-ethereum's abigen.
+Compiled artifacts are checked in under `src/abis/artifacts`, so building
+and testing never needs a Solidity toolchain.
+
 ## v0.5.1-beta
 
 **If you operate a node on a contract whose balance is below the fees it owes,
