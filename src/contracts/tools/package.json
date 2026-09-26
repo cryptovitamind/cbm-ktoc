@@ -1,0 +1,11 @@
+{
+  "name": "cbm-contracts-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Project-local Solidity toolchain for compiling the contracts in src/contracts. node_modules is git-ignored.",
+  "scripts": { "compile": "node compile.js" },
+  "dependencies": {
+    "solc": "0.8.16",
+    "@openzeppelin/contracts": "4.9.6"
+  }
+}

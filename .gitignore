@@ -38,6 +38,8 @@ coveragessh -T git@github.com
 
 # KT Secret file...
 .env
+# Battles CLI config (holds a private key)
+battles.env
 
 # Logs...
 *.log 
@@ -49,6 +51,10 @@ src/ktp2/coverage
 # Built binary output of `./build.sh` / `build.ps1`
 /cmd
 /ktoc
+/battles
+
+# Project-local Solidity toolchain (src/contracts/compile.sh installs it)
+/src/contracts/tools/node_modules/
 
 # Local live integration-test harness (dev node, deploy + multi-node scripts)
 /integration-test/
